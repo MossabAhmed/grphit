@@ -172,11 +172,28 @@ function inferUnit(label, category) {
 function normalizeState() {
   state.version = 2;
   state.products.forEach((p) => { p.id ||= uid(); p.unitCategory ||= inferCategory(p.unit); p.baseUnit ||= inferUnit(p.unit, p.unitCategory); p.alternateUnits ||= []; p.openingQty = num(p.openingQty ?? p.qty); p.openingCost = num(p.openingCost); p.minLevel = num(p.minLevel); });
+  deduplicateProducts();
   const fallback = state.products[0]?.id;
   state.imports.forEach((x) => { x.id ||= uid(); x.itemId ||= fallback; x.enteredQty = num(x.enteredQty ?? x.qty); x.enteredUnit ||= 'base'; x.qty = num(x.qty); x.cost = num(x.cost); x.freight = num(x.freight); x.duty = num(x.duty); x.otherCost = num(x.otherCost); });
   state.exports.forEach((x) => { x.id ||= uid(); x.itemId ||= fallback; x.enteredQty = num(x.enteredQty ?? x.qty); x.enteredUnit ||= 'base'; x.qty = num(x.qty); x.revenue = num(x.revenue); x.paid = num(x.paid); });
   state.expenses.forEach((x) => { x.id ||= uid(); x.amount = num(x.amount); x.paymentStatus ||= 'paid'; });
   state.payroll.forEach((x) => { x.id ||= uid(); x.salary = num(x.salary); x.advance = num(x.advance); x.month ||= monthKey(); });
+}
+
+function deduplicateProducts() {
+  const groups = new Map();
+  state.products.forEach((item) => { const key = `${normalize(item.name)}|${item.unitCategory}|${item.baseUnit}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
+  groups.forEach((items) => {
+    if (items.length < 2) return;
+    const primary = items[0];
+    const ids = new Set(items.slice(1).map((item) => item.id));
+    const totalQty = sum(items.map((item) => item.openingQty));
+    const totalValue = sum(items.map((item) => num(item.openingQty) * num(item.openingCost)));
+    primary.openingQty = totalQty; primary.openingCost = totalQty ? totalValue / totalQty : 0; primary.minLevel = Math.max(...items.map((item) => num(item.minLevel)));
+    state.imports.forEach((entry) => { if (ids.has(entry.itemId)) entry.itemId = primary.id; });
+    state.exports.forEach((entry) => { if (ids.has(entry.itemId)) entry.itemId = primary.id; });
+    state.products = state.products.filter((item) => !ids.has(item.id));
+  });
 }
 
 function bindNavigation() {
@@ -259,7 +276,7 @@ function renderTable(key, rows, cells, highlight) { const config = tableConfig[k
 const editModal = $('editModal');
 const editForm = $('editForm');
 function openEditModal(key, id) {
-  const collection = key === 'workers' ? 'payroll' : key; const record = state[collection]?.find((item) => item.id === id); if (!record) return;
+  const collection = key === 'workers' ? 'payroll' : key === 'inventory' ? 'products' : key; const record = state[collection]?.find((item) => item.id === id); if (!record) return;
   editForm.dataset.key = key; editForm.dataset.id = id;
   const fields = key === 'inventory' ? [['name','اسم الصنف','text'],['category','الفئة','text'],['minLevel','حد إعادة الطلب','number'],['openingCost','تكلفة الوحدة','number']] : key === 'imports' ? [['supplier','المورد','text'],['enteredQty','الكمية المدخلة','number'],['cost','سعر الشراء','number'],['freight','الشحن','number'],['duty','الجمارك','number'],['otherCost','تكاليف أخرى','number'],['date','التاريخ','date']] : key === 'exports' ? [['customer','العميل','text'],['enteredQty','الكمية المدخلة','number'],['revenue','قيمة البيع','number'],['paid','المحصل','number'],['date','التاريخ','date']] : key === 'expenses' ? [['type','النوع','text'],['description','الوصف','text'],['amount','المبلغ','number'],['date','التاريخ','date']] : key === 'workers' ? [['name','العامل','text'],['role','الوظيفة','text'],['salary','الراتب','number'],['advance','السلفة','number'],['month','الشهر','month']] : [['name','الاسم','text'],['phone','الهاتف','text'],['note','ملاحظات','text']];
   $('editFields').innerHTML = fields.map(([name, label, type]) => `<label>${label}<input name="${name}" type="${type}" value="${esc(record[name] ?? '')}" required></label>`).join('');
@@ -268,7 +285,7 @@ function openEditModal(key, id) {
 }
 function closeEditModal() { editModal.setAttribute('aria-hidden', 'true'); document.body.style.overflow = ''; editForm.reset(); delete editForm.dataset.key; delete editForm.dataset.id; }
 $('editCancel').addEventListener('click', closeEditModal); $('editModalClose').addEventListener('click', closeEditModal); editModal.addEventListener('click', (event) => { if (event.target === editModal) closeEditModal(); });
-editForm.addEventListener('submit', async (event) => { event.preventDefault(); const key = editForm.dataset.key; const id = editForm.dataset.id; const collection = key === 'workers' ? 'payroll' : key; const record = state[collection]?.find((item) => item.id === id); if (!record) return closeEditModal(); const data = new FormData(editForm); const updated = {}; for (const [field, value] of data.entries()) updated[field] = ['enteredQty','cost','freight','duty','otherCost','revenue','paid','amount','salary','advance','minLevel','openingCost'].includes(field) ? num(value) : value; if (['imports','exports'].includes(key)) { const p = product(updated.itemId || record.itemId); const factor = conversionFactor(p, updated.enteredUnit || record.enteredUnit); if (!p || !factor) return notify('الوحدة غير متوافقة مع الصنف', true); updated.itemId = p.id; updated.qty = num(updated.enteredQty) * factor; } const before = { ...record }; Object.assign(record, updated); const validation = calculateInventory(); if (validation.error) { Object.assign(record, before); return notify(validation.error, true); } closeEditModal(); await changed('تم تعديل السجل وإعادة احتساب المخزون والتقارير'); });
+editForm.addEventListener('submit', async (event) => { event.preventDefault(); const key = editForm.dataset.key; const id = editForm.dataset.id; const collection = key === 'workers' ? 'payroll' : key === 'inventory' ? 'products' : key; const record = state[collection]?.find((item) => item.id === id); if (!record) return closeEditModal(); const data = new FormData(editForm); const updated = {}; for (const [field, value] of data.entries()) updated[field] = ['enteredQty','cost','freight','duty','otherCost','revenue','paid','amount','salary','advance','minLevel','openingCost'].includes(field) ? num(value) : value; if (['imports','exports'].includes(key)) { const p = product(updated.itemId || record.itemId); const factor = conversionFactor(p, updated.enteredUnit || record.enteredUnit); if (!p || !factor) return notify('الوحدة غير متوافقة مع الصنف', true); updated.itemId = p.id; updated.qty = num(updated.enteredQty) * factor; } const before = { ...record }; Object.assign(record, updated); const validation = calculateInventory(); if (validation.error) { Object.assign(record, before); return notify(validation.error, true); } closeEditModal(); await changed('تم تعديل السجل وإعادة احتساب المخزون والتقارير'); });
 async function removeRecord(key, id) { if (!confirm('حذف السجل؟ سيتم إعادة احتساب الأرصدة والتقارير.')) return; if (key === 'inventory') { const used = state.imports.some((x) => x.itemId === id) || state.exports.some((x) => x.itemId === id); if (used) return notify('لا يمكن حذف صنف مرتبط بحركات. احذفه من الاستخدام أو اتركه للأرشيف.', true); state.products = state.products.filter((x) => x.id !== id); } else { const collection = key === 'workers' ? 'payroll' : key; state[collection] = state[collection].filter((x) => x.id !== id); } await changed('تم حذف السجل وإعادة الحساب'); }
 
 function renderReports() { const data = periodData($('reportsMonth').value || monthKey()); const metrics = [['الإيرادات', money(data.revenue)], ['تكلفة المبيعات', money(data.cogs)], ['المصروفات التشغيلية', money(data.operating)], ['الرواتب', money(data.salaries)], ['صافي الربح', money(data.net)]]; $('reportMetrics').innerHTML = metrics.map(([label, value]) => `<div class="metric-item"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join(''); const grouped = {}; data.expenses.forEach((x) => { grouped[x.type] = (grouped[x.type] || 0) + num(x.amount); }); const breakdown = Object.entries(grouped).sort((a, b) => b[1] - a[1]); $('expenseBreakdown').innerHTML = breakdown.length ? breakdown.map(([type, total]) => `<li>${esc(type)}: ${money(total)}</li>`).join('') : '<li>لا توجد مصروفات في الشهر المحدد</li>'; $('monthlySummary').innerHTML = [['الشهر', $('reportsMonth').value], ['المبيعات', money(data.revenue)], ['تكلفة المبيعات', money(data.cogs)], ['المصروفات', money(data.operating)], ['الرواتب', money(data.salaries)], ['صافي الربح', money(data.net)]].map(([label, value]) => `<div class="monthly-card"><span>${esc(label)}</span><strong class="${String(value).includes('-') ? 'negative' : ''}">${esc(value)}</strong></div>`).join(''); }
