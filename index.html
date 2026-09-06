@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>لوحة إدارة مصنع الجرافيت</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">G</span>
+        <div>
+          <h1>مصنع الجرافيت</h1>
+          <p>لوحة الإدارة والمحاسبة</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-section="dashboard">لوحة التحكم</button>
+        <button class="nav-item" data-section="inventory">المخزون</button>
+        <button class="nav-item" data-section="imports">الواردات</button>
+        <button class="nav-item" data-section="exports">الصادرات</button>
+        <button class="nav-item" data-section="expenses">المصاريف</button>
+        <button class="nav-item" data-section="workers">العمال والرواتب</button>
+        <button class="nav-item" data-section="partners">العملاء والموردون</button>
+        <button class="nav-item" data-section="reports">التقارير</button>
+        <button class="nav-item" data-section="settings">الإعدادات</button>
+      </nav>
+
+      <div class="sidebar-card">
+        <div class="sidebar-card-label">وضع التخزين</div>
+        <strong>محلي داخل المتصفح</strong>
+        <p>كل البيانات تحفظ تلقائيًا باستخدام localStorage.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">نظام إدارة داخلي</p>
+          <h2>مؤشرات المصنع والعمليات اليومية</h2>
+        </div>
+        <div class="topbar-actions">
+          <button class="ghost-btn" id="exportDataBtn">تصدير البيانات</button>
+          <label class="ghost-btn file-btn">
+            استيراد البيانات
+            <input type="file" id="importDataInput" accept="application/json" hidden />
+          </label>
+          <button class="primary-btn" id="resetDemoBtn">إعادة بيانات تجريبية</button>
+        </div>
+      </header>
+
+      <section id="dashboardSection" class="section active-section">
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <div class="panel-grid">
+          <div class="panel wide-panel">
+            <div class="panel-head">
+              <div>
+                <h3>ملخص مالي</h3>
+                <p>الإيرادات والمصاريف وصافي الربح خلال الفترة الحالية</p>
+              </div>
+            </div>
+            <div class="chart-wrap" id="financialChart"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>تنبيهات سريعة</h3>
+                <p>حالات تحتاج متابعة</p>
+              </div>
+            </div>
+            <ul class="alerts" id="alertsList"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="inventorySection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>المخزون</h3>
+            <p>متابعة المواد الخام والمنتجات الجاهزة والكميات الحرجة</p>
+          </div>
+          <input class="search-input" id="inventorySearch" placeholder="بحث في المخزون..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة صنف مخزون</h4>
+          <form id="inventoryForm" class="grid-form">
+            <input name="name" placeholder="اسم الصنف" required />
+            <input name="category" placeholder="الفئة" required />
+            <input name="qty" type="number" min="0" step="1" placeholder="الكمية" required />
+            <input name="unit" placeholder="الوحدة" required />
+            <input name="minLevel" type="number" min="0" step="1" placeholder="حد النقص" required />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>الصنف</th>
+                <th>الفئة</th>
+                <th>الكمية</th>
+                <th>حد النقص</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTable"></tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <section id="importsSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>الواردات</h3>
+            <p>تسجيل المواد الداخلة للمصنع ومصاريف الشحن والجمارك</p>
+          </div>
+          <input class="search-input" id="importsSearch" placeholder="بحث في الواردات..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة واردة</h4>
+          <form id="importsForm" class="grid-form">
+            <input name="supplier" placeholder="المورد" required />
+            <input name="item" placeholder="المنتج / المادة" required />
+            <input name="qty" type="number" min="0" step="1" placeholder="الكمية" required />
+            <input name="cost" type="number" min="0" step="0.01" placeholder="التكلفة" required />
+            <input name="date" type="date" required />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>المورد</th>
+                <th>العنصر</th>
+                <th>الكمية</th>
+                <th>التكلفة</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="importsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="exportsSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>الصادرات</h3>
+            <p>مبيعات المصنع والطلبيات والتحصيل</p>
+          </div>
+          <input class="search-input" id="exportsSearch" placeholder="بحث في الصادرات..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة فاتورة تصدير</h4>
+          <form id="exportsForm" class="grid-form">
+            <input name="customer" placeholder="العميل" required />
+            <input name="item" placeholder="المنتج" required />
+            <input name="qty" type="number" min="0" step="1" placeholder="الكمية" required />
+            <input name="revenue" type="number" min="0" step="0.01" placeholder="قيمة البيع" required />
+            <input name="date" type="date" required />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>العميل</th>
+                <th>المنتج</th>
+                <th>الكمية</th>
+                <th>الإيراد</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="exportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="expensesSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>المصاريف</h3>
+            <p>المصاريف التشغيلية والصيانة والخدمات</p>
+          </div>
+          <input class="search-input" id="expensesSearch" placeholder="بحث في المصاريف..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة مصروف</h4>
+          <form id="expensesForm" class="grid-form">
+            <input name="type" placeholder="نوع المصروف" required />
+            <input name="description" placeholder="الوصف" required />
+            <input name="amount" type="number" min="0" step="0.01" placeholder="المبلغ" required />
+            <input name="date" type="date" required />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>النوع</th>
+                <th>الوصف</th>
+                <th>المبلغ</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="expensesTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="workersSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>العمال والرواتب</h3>
+            <p>بيانات العمال، الرواتب، السلف، والحضور</p>
+          </div>
+          <input class="search-input" id="workersSearch" placeholder="بحث في العمال..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة عامل</h4>
+          <form id="workersForm" class="grid-form">
+            <input name="name" placeholder="اسم العامل" required />
+            <input name="role" placeholder="الوظيفة" required />
+            <input name="salary" type="number" min="0" step="0.01" placeholder="الراتب الشهري" required />
+            <input name="advance" type="number" min="0" step="0.01" placeholder="السلفة" value="0" />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>الوظيفة</th>
+                <th>الراتب</th>
+                <th>السلفة</th>
+                <th>الصافي</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="workersTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="partnersSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>العملاء والموردون</h3>
+            <p>دفتر جهات الاتصال التجارية للمصنع</p>
+          </div>
+          <input class="search-input" id="partnersSearch" placeholder="بحث في الجهات..." />
+        </div>
+        <div class="form-card">
+          <h4>إضافة جهة</h4>
+          <form id="partnersForm" class="grid-form">
+            <input name="name" placeholder="الاسم" required />
+            <select name="type" required>
+              <option value="">النوع</option>
+              <option value="عميل">عميل</option>
+              <option value="مورد">مورد</option>
+            </select>
+            <input name="phone" placeholder="رقم الهاتف" required />
+            <input name="note" placeholder="ملاحظات" />
+            <button class="primary-btn" type="submit">إضافة</button>
+          </form>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>النوع</th>
+                <th>الهاتف</th>
+                <th>ملاحظات</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody id="partnersTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="reportsSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>التقارير</h3>
+            <p>تحليل إجمالي الأداء والإيرادات والمصاريف</p>
+          </div>
+          <input class="search-input" id="reportsMonth" type="month" />
+        </div>
+        <div class="panel-grid">
+          <div class="panel">
+            <h4>مؤشرات سريعة</h4>
+            <div class="mini-metrics" id="reportMetrics"></div>
+          </div>
+          <div class="panel">
+            <h4>أعلى أنواع المصاريف</h4>
+            <ul class="report-list" id="expenseBreakdown"></ul>
+          </div>
+        </div>
+        <div class="panel monthly-panel">
+          <div class="panel-head">
+            <div>
+              <h4>ملخص الشهر المحدد</h4>
+              <p>إجمالي الحركة المالية حسب الشهر المختار</p>
+            </div>
+          </div>
+          <div class="monthly-summary" id="monthlySummary"></div>
+        </div>
+      </section>
+
+      <section id="settingsSection" class="section">
+        <div class="section-head">
+          <div>
+            <h3>الإعدادات</h3>
+            <p>إعدادات اسم المصنع، العملة، والواجهة</p>
+          </div>
+        </div>
+        <div class="form-card">
+          <form id="settingsForm" class="grid-form">
+            <input name="factoryName" placeholder="اسم المصنع" />
+            <input name="currency" placeholder="العملة" />
+            <input name="taxRate" type="number" min="0" step="0.01" placeholder="نسبة الضريبة %" />
+            <button class="primary-btn" type="submit">حفظ الإعدادات</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="editModal" class="modal" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+      <header class="modal-header">
+        <h3 id="editModalTitle">تعديل السجل</h3>
+        <button class="modal-close" id="editModalClose" aria-label="إغلاق" type="button">×</button>
+      </header>
+      <form id="editForm" class="modal-form">
+        <div id="editFields"></div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="editCancel">إلغاء</button>
+          <button type="submit" class="primary-btn">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>
