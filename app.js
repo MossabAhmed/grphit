@@ -1,744 +1,216 @@
-const STORAGE_KEY = 'graphite-factory-dashboard-v1';
+const DB_NAME = 'graphite-factory-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'app-state';
+const LEGACY_KEY = 'graphite-factory-dashboard-v1';
 
-const currencyFormatter = (currency) => new Intl.NumberFormat('ar', {
-  style: 'currency',
-  currency: currency || 'USD',
-  maximumFractionDigits: 2,
+const $ = (id) => document.getElementById(id);
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const today = () => new Date().toISOString().slice(0, 10);
+const monthKey = (date = today()) => String(date).slice(0, 7);
+const num = (value) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
+const sum = (values) => values.reduce((total, value) => total + num(value), 0);
+const money = (value) => currencyFormatter(state.settings.currency).format(num(value));
+const currencyFormatter = (currency) => new Intl.NumberFormat('ar', { style: 'currency', currency: currency || 'LYD', maximumFractionDigits: 2 });
+const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+const normalize = (value) => String(value ?? '').normalize('NFKD').replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').toLowerCase().trim();
+
+const defaults = () => ({
+  version: 2,
+  settings: { factoryName: 'مصنع الجرافيت', currency: 'LYD', taxRate: 15 },
+  products: [
+    { id: uid(), name: 'مسحوق جرافيت', category: 'خام', unit: 'طن', openingQty: 42, openingCost: 1100, minLevel: 10 },
+    { id: uid(), name: 'قوالب ضغط', category: 'معدات', unit: 'قطعة', openingQty: 8, openingCost: 600, minLevel: 3 },
+    { id: uid(), name: 'منتج نهائي A', category: 'نهائي', unit: 'صندوق', openingQty: 120, openingCost: 320, minLevel: 30 },
+  ],
+  imports: [
+    { id: uid(), supplier: 'شركة الشرق', itemId: '', qty: 20, cost: 25000, freight: 1000, duty: 400, otherCost: 0, date: offsetDate(-10) },
+    { id: uid(), supplier: 'مؤسسة النور', itemId: '', qty: 12, cost: 4800, freight: 200, duty: 0, otherCost: 0, date: offsetDate(-5) },
+  ],
+  exports: [],
+  expenses: [
+    { id: uid(), type: 'كهرباء', description: 'فاتورة التشغيل الشهرية', amount: 4200, date: offsetDate(-7), paymentStatus: 'paid' },
+    { id: uid(), type: 'صيانة', description: 'صيانة خط الإنتاج', amount: 5600, date: offsetDate(-2), paymentStatus: 'paid' },
+    { id: uid(), type: 'نقل', description: 'شحن داخلي', amount: 900, date: offsetDate(-1), paymentStatus: 'paid' },
+  ],
+  payroll: [
+    { id: uid(), name: 'أحمد سالم', role: 'مشرف إنتاج', salary: 9500, advance: 1500, month: monthKey() },
+    { id: uid(), name: 'محمود علي', role: 'فني تشغيل', salary: 7200, advance: 0, month: monthKey() },
+    { id: uid(), name: 'سعيد حسن', role: 'عامل تعبئة', salary: 5600, advance: 600, month: monthKey() },
+  ],
+  partners: [
+    { id: uid(), name: 'شركة الشرق', type: 'مورد', phone: '0123456789', note: 'مورد المواد الخام' },
+    { id: uid(), name: 'مصنع البناء الحديث', type: 'عميل', phone: '0112233445', note: 'عميل دوري' },
+  ],
 });
 
-// Polyfill lightweight UUID generator when crypto.randomUUID is not available
-if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
-  if (typeof crypto === 'undefined') window.crypto = {};
-  crypto.randomUUID = function () {
-    const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-    return `${Date.now().toString(16)}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
-  };
+function offsetDate(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
+let state = null;
+let db = null;
+const filters = { inventory: '', imports: '', exports: '', expenses: '', workers: '', partners: '' };
+const sections = ['dashboard','inventory','imports','exports','expenses','workers','partners','reports','settings'];
+
+const tableConfig = {
+  inventory: { tbody: 'inventoryTable', search: 'inventorySearch' },
+  imports: { tbody: 'importsTable', search: 'importsSearch' },
+  exports: { tbody: 'exportsTable', search: 'exportsSearch' },
+  expenses: { tbody: 'expensesTable', search: 'expensesSearch' },
+  workers: { tbody: 'workersTable', search: 'workersSearch' },
+  partners: { tbody: 'partnersTable', search: 'partnersSearch' },
+};
+
+window.addEventListener('DOMContentLoaded', init);
+
+async function init() {
+  try {
+    db = await openDatabase();
+    state = await loadState();
+    normalizeState();
+    bindNavigation();
+    bindForms();
+    bindSearch();
+    bindActions();
+    renderAll();
+    await saveState();
+  } catch (error) {
+    console.error(error);
+    alert('تعذر فتح قاعدة البيانات المحلية. جرّب متصفحًا حديثًا أو اسمح بالتخزين المحلي.');
+  }
 }
 
-const defaults = {
-  settings: {
-    factoryName: 'مصنع الجرافيت',
-    currency: 'LYD',
-    taxRate: 15,
-  },
-  inventory: [
-    { id: crypto.randomUUID(), name: 'مسحوق جرافيت', category: 'خام', qty: 42, unit: 'طن', minLevel: 10 },
-    { id: crypto.randomUUID(), name: 'قوالب ضغط', category: 'معدات', qty: 8, unit: 'قطعة', minLevel: 3 },
-    { id: crypto.randomUUID(), name: 'منتج نهائي A', category: 'نهائي', qty: 120, unit: 'صندوق', minLevel: 30 },
-  ],
-  imports: [
-    { id: crypto.randomUUID(), supplier: 'شركة الشرق', item: 'مسحوق جرافيت', qty: 20, cost: 25000, date: todayOffset(-10) },
-    { id: crypto.randomUUID(), supplier: 'مؤسسة النور', item: 'قطع غيار', qty: 12, cost: 4800, date: todayOffset(-5) },
-  ],
-  exports: [
-    { id: crypto.randomUUID(), customer: 'مصنع البناء الحديث', item: 'منتج نهائي A', qty: 30, revenue: 18600, date: todayOffset(-8) },
-    { id: crypto.randomUUID(), customer: 'شركة المواد الصناعية', item: 'منتج نهائي B', qty: 18, revenue: 14100, date: todayOffset(-3) },
-  ],
-  expenses: [
-    { id: crypto.randomUUID(), type: 'كهرباء', description: 'فاتورة التشغيل الشهرية', amount: 4200, date: todayOffset(-7) },
-    { id: crypto.randomUUID(), type: 'صيانة', description: 'صيانة خط الإنتاج', amount: 5600, date: todayOffset(-2) },
-    { id: crypto.randomUUID(), type: 'نقل', description: 'شحن داخلي', amount: 900, date: todayOffset(-1) },
-  ],
-  workers: [
-    { id: crypto.randomUUID(), name: 'أحمد سالم', role: 'مشرف إنتاج', salary: 9500, advance: 1500 },
-    { id: crypto.randomUUID(), name: 'محمود علي', role: 'فني تشغيل', salary: 7200, advance: 0 },
-    { id: crypto.randomUUID(), name: 'سعيد حسن', role: 'عامل تعبئة', salary: 5600, advance: 600 },
-  ],
-  partners: [
-    { id: crypto.randomUUID(), name: 'شركة الشرق', type: 'مورد', phone: '0123456789', note: 'مورد المواد الخام' },
-    { id: crypto.randomUUID(), name: 'مصنع البناء الحديث', type: 'عميل', phone: '0112233445', note: 'عميل دوري' },
-  ],
-};
+function openDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
 
-const state = loadState();
-state.settings.currency = 'LYD';
-let activeFilters = {
-  inventory: '',
-  imports: '',
-  exports: '',
-  expenses: '',
-  workers: '',
-  partners: '',
-};
+function readDatabase() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const request = tx.objectStore(STORE_NAME).get('state');
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
 
-const sections = {
-  dashboard: document.getElementById('dashboardSection'),
-  inventory: document.getElementById('inventorySection'),
-  imports: document.getElementById('importsSection'),
-  exports: document.getElementById('exportsSection'),
-  expenses: document.getElementById('expensesSection'),
-  workers: document.getElementById('workersSection'),
-  partners: document.getElementById('partnersSection'),
-  reports: document.getElementById('reportsSection'),
-  settings: document.getElementById('settingsSection'),
-};
+function saveState() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(state, 'state');
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
 
-const tableConfigs = {
-  inventory: {
-    tbody: document.getElementById('inventoryTable'),
-    search: document.getElementById('inventorySearch'),
-    fields: ['name', 'category'],
-  },
-  imports: {
-    tbody: document.getElementById('importsTable'),
-    search: document.getElementById('importsSearch'),
-    fields: ['supplier', 'item'],
-  },
-  exports: {
-    tbody: document.getElementById('exportsTable'),
-    search: document.getElementById('exportsSearch'),
-    fields: ['customer', 'item'],
-  },
-  expenses: {
-    tbody: document.getElementById('expensesTable'),
-    search: document.getElementById('expensesSearch'),
-    fields: ['type', 'description'],
-  },
-  workers: {
-    tbody: document.getElementById('workersTable'),
-    search: document.getElementById('workersSearch'),
-    fields: ['name', 'role'],
-  },
-  partners: {
-    tbody: document.getElementById('partnersTable'),
-    search: document.getElementById('partnersSearch'),
-    fields: ['name', 'type', 'phone', 'note'],
-  },
-};
-
-const recordSchemas = {
-  inventory: [
-    { key: 'name', label: 'اسم الصنف', type: 'text' },
-    { key: 'category', label: 'الفئة', type: 'text' },
-    { key: 'qty', label: 'الكمية', type: 'number' },
-    { key: 'unit', label: 'الوحدة', type: 'text' },
-    { key: 'minLevel', label: 'حد النقص', type: 'number' },
-  ],
-  imports: [
-    { key: 'supplier', label: 'المورد', type: 'text' },
-    { key: 'item', label: 'العنصر', type: 'text' },
-    { key: 'qty', label: 'الكمية', type: 'number' },
-    { key: 'cost', label: 'التكلفة', type: 'number' },
-    { key: 'date', label: 'التاريخ', type: 'date' },
-  ],
-  exports: [
-    { key: 'customer', label: 'العميل', type: 'text' },
-    { key: 'item', label: 'المنتج', type: 'text' },
-    { key: 'qty', label: 'الكمية', type: 'number' },
-    { key: 'revenue', label: 'الإيراد', type: 'number' },
-    { key: 'date', label: 'التاريخ', type: 'date' },
-  ],
-  expenses: [
-    { key: 'type', label: 'نوع المصروف', type: 'text' },
-    { key: 'description', label: 'الوصف', type: 'text' },
-    { key: 'amount', label: 'المبلغ', type: 'number' },
-    { key: 'date', label: 'التاريخ', type: 'date' },
-  ],
-  workers: [
-    { key: 'name', label: 'اسم العامل', type: 'text' },
-    { key: 'role', label: 'الوظيفة', type: 'text' },
-    { key: 'salary', label: 'الراتب الشهري', type: 'number' },
-    { key: 'advance', label: 'السلفة', type: 'number' },
-  ],
-  partners: [
-    { key: 'name', label: 'الاسم', type: 'text' },
-    { key: 'type', label: 'النوع', type: 'text' },
-    { key: 'phone', label: 'الهاتف', type: 'text' },
-    { key: 'note', label: 'ملاحظات', type: 'text' },
-  ],
-};
-
-const reportMonthInput = document.getElementById('reportsMonth');
-const monthlySummaryContainer = document.getElementById('monthlySummary');
-
-attachNavigation();
-attachForms();
-attachSearch();
-attachActions();
-renderAll();
-
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    return structuredClone(defaults);
+async function loadState() {
+  const stored = await readDatabase();
+  if (stored) return mergeState(defaults(), stored);
+  const legacy = localStorage.getItem(LEGACY_KEY);
+  if (legacy) {
+    try { return migrateLegacy(JSON.parse(legacy)); } catch { /* use demo data */ }
   }
+  return seedState(defaults());
+}
 
-  try {
-    const parsed = JSON.parse(saved);
-    return mergeState(defaults, parsed);
-  } catch {
-    return structuredClone(defaults);
-  }
+function seedState(value) {
+  const productIds = value.products.map((p) => p.id);
+  value.imports.forEach((entry, index) => { entry.itemId = productIds[index % productIds.length]; });
+  value.exports.push({ id: uid(), customer: 'مصنع البناء الحديث', itemId: productIds[2], qty: 30, revenue: 18600, paid: 12000, date: offsetDate(-8) });
+  value.exports.push({ id: uid(), customer: 'شركة المواد الصناعية', itemId: productIds[2], qty: 18, revenue: 14100, paid: 14100, date: offsetDate(-3) });
+  return value;
+}
+
+function migrateLegacy(old) {
+  const value = defaults();
+  if (Array.isArray(old.inventory) && old.inventory.length) value.products = [];
+  (old.inventory || []).forEach((item) => value.products.push({ id: uid(), name: item.name, category: item.category || 'عام', unit: item.unit || 'وحدة', openingQty: num(item.qty), openingCost: 0, minLevel: num(item.minLevel) }));
+  const allProducts = new Map(value.products.map((p) => [normalize(p.name), p.id]));
+  value.imports = (old.imports || []).map((x) => ({ id: x.id || uid(), supplier: x.supplier || '', itemId: allProducts.get(normalize(x.item)) || value.products[0].id, qty: num(x.qty), cost: num(x.cost), freight: 0, duty: 0, otherCost: 0, date: x.date || today() }));
+  value.exports = (old.exports || []).map((x) => ({ id: x.id || uid(), customer: x.customer || '', itemId: allProducts.get(normalize(x.item)) || value.products[0].id, qty: num(x.qty), revenue: num(x.revenue), paid: 0, date: x.date || today() }));
+  value.expenses = (old.expenses || []).map((x) => ({ ...x, amount: num(x.amount), paymentStatus: 'paid' }));
+  value.payroll = (old.workers || []).map((x) => ({ id: x.id || uid(), name: x.name || '', role: x.role || '', salary: num(x.salary), advance: num(x.advance), month: monthKey() }));
+  value.partners = old.partners || value.partners;
+  value.settings = { ...value.settings, ...(old.settings || {}) };
+  return value;
 }
 
 function mergeState(base, saved) {
-  return {
-    settings: { ...base.settings, ...(saved.settings || {}) },
-    inventory: Array.isArray(saved.inventory) ? saved.inventory : structuredClone(base.inventory),
-    imports: Array.isArray(saved.imports) ? saved.imports : structuredClone(base.imports),
-    exports: Array.isArray(saved.exports) ? saved.exports : structuredClone(base.exports),
-    expenses: Array.isArray(saved.expenses) ? saved.expenses : structuredClone(base.expenses),
-    workers: Array.isArray(saved.workers) ? saved.workers : structuredClone(base.workers),
-    partners: Array.isArray(saved.partners) ? saved.partners : structuredClone(base.partners),
-  };
+  const result = { ...base, ...saved, settings: { ...base.settings, ...(saved.settings || {}) } };
+  result.products = Array.isArray(saved.products) ? saved.products : (Array.isArray(saved.inventory) ? saved.inventory.map((x) => ({ ...x, openingQty: num(x.qty), openingCost: 0 })) : base.products);
+  result.imports = Array.isArray(saved.imports) ? saved.imports : base.imports;
+  result.exports = Array.isArray(saved.exports) ? saved.exports : base.exports;
+  result.expenses = Array.isArray(saved.expenses) ? saved.expenses : base.expenses;
+  result.payroll = Array.isArray(saved.payroll) ? saved.payroll : (saved.workers || base.payroll);
+  result.partners = Array.isArray(saved.partners) ? saved.partners : base.partners;
+  return result;
 }
 
-function persistState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function normalizeState() {
+  state.version = 2;
+  state.products.forEach((p) => { p.id ||= uid(); p.openingQty = num(p.openingQty ?? p.qty); p.openingCost = num(p.openingCost); p.minLevel = num(p.minLevel); });
+  const fallback = state.products[0]?.id;
+  state.imports.forEach((x) => { x.id ||= uid(); x.itemId ||= fallback; x.qty = num(x.qty); x.cost = num(x.cost); x.freight = num(x.freight); x.duty = num(x.duty); x.otherCost = num(x.otherCost); });
+  state.exports.forEach((x) => { x.id ||= uid(); x.itemId ||= fallback; x.qty = num(x.qty); x.revenue = num(x.revenue); x.paid = num(x.paid); });
+  state.expenses.forEach((x) => { x.id ||= uid(); x.amount = num(x.amount); x.paymentStatus ||= 'paid'; });
+  state.payroll.forEach((x) => { x.id ||= uid(); x.salary = num(x.salary); x.advance = num(x.advance); x.month ||= monthKey(); });
 }
 
-function renderAll() {
-  renderSettingsForm();
-  renderDashboard();
-  renderTables();
-  renderReports();
-  persistState();
+function bindNavigation() {
+  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === button));
+    sections.forEach((name) => $(name + 'Section').classList.toggle('active-section', name === button.dataset.section));
+  }));
 }
 
-function attachNavigation() {
-  document.querySelectorAll('.nav-item').forEach((button) => {
-    button.addEventListener('click', () => {
-      const sectionName = button.dataset.section;
-      document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
-      button.classList.add('active');
-      Object.entries(sections).forEach(([name, section]) => {
-        section.classList.toggle('active-section', name === sectionName);
-      });
-    });
-  });
+function bindForms() {
+  $('inventoryForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; state.products.unshift({ id: uid(), name: f.name.value.trim(), category: f.category.value.trim(), unit: f.unit.value.trim(), openingQty: num(f.qty.value), openingCost: num(f.openingCost.value), minLevel: num(f.minLevel.value) }); await changed('تمت إضافة الصنف'); f.reset(); });
+  $('importsForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; const entry = { id: uid(), supplier: f.supplier.value.trim(), itemId: f.itemId.value, qty: num(f.qty.value), cost: num(f.cost.value), freight: num(f.freight.value), duty: num(f.duty.value), otherCost: num(f.otherCost.value), date: f.date.value }; if (!entry.itemId || entry.qty <= 0) return notify('اختر صنفًا وأدخل كمية صحيحة', true); state.imports.unshift(entry); await changed('تم تسجيل الاستلام وتحديث المخزون'); f.reset(); });
+  $('exportsForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; const entry = { id: uid(), customer: f.customer.value.trim(), itemId: f.itemId.value, qty: num(f.qty.value), revenue: num(f.revenue.value), paid: num(f.paid.value), date: f.date.value }; if (!entry.itemId || entry.qty <= 0) return notify('اختر صنفًا وأدخل كمية صحيحة', true); state.exports.unshift(entry); const validation = calculateInventory(); if (validation.error) { state.exports.shift(); return notify(validation.error, true); } await changed('تم تسجيل البيع وخصم الكمية وحساب التكلفة'); f.reset(); });
+  $('expensesForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; state.expenses.unshift({ id: uid(), type: f.type.value.trim(), description: f.description.value.trim(), amount: num(f.amount.value), date: f.date.value, paymentStatus: f.paymentStatus.value }); await changed('تمت إضافة المصروف'); f.reset(); });
+  $('workersForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; state.payroll.unshift({ id: uid(), name: f.name.value.trim(), role: f.role.value.trim(), salary: num(f.salary.value), advance: num(f.advance.value), month: f.month.value }); await changed('تم تسجيل الراتب للشهر المحدد'); f.reset(); });
+  $('partnersForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; state.partners.unshift({ id: uid(), name: f.name.value.trim(), type: f.type.value, phone: f.phone.value.trim(), note: f.note.value.trim() }); await changed('تمت إضافة الجهة'); f.reset(); });
+  $('settingsForm').addEventListener('submit', async (event) => { event.preventDefault(); const f = event.currentTarget; state.settings = { factoryName: f.factoryName.value.trim(), currency: (f.currency.value.trim() || 'LYD').toUpperCase(), taxRate: Math.min(100, Math.max(0, num(f.taxRate.value))) }; await changed('تم حفظ الإعدادات'); });
 }
 
-function attachForms() {
-  document.getElementById('inventoryForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.inventory.unshift({
-      id: crypto.randomUUID(),
-      name: form.name.value.trim(),
-      category: form.category.value.trim(),
-      qty: Number(form.qty.value),
-      unit: form.unit.value.trim(),
-      minLevel: Number(form.minLevel.value),
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('importsForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.imports.unshift({
-      id: crypto.randomUUID(),
-      supplier: form.supplier.value.trim(),
-      item: form.item.value.trim(),
-      qty: Number(form.qty.value),
-      cost: Number(form.cost.value),
-      date: form.date.value,
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('exportsForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.exports.unshift({
-      id: crypto.randomUUID(),
-      customer: form.customer.value.trim(),
-      item: form.item.value.trim(),
-      qty: Number(form.qty.value),
-      revenue: Number(form.revenue.value),
-      date: form.date.value,
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('expensesForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.expenses.unshift({
-      id: crypto.randomUUID(),
-      type: form.type.value.trim(),
-      description: form.description.value.trim(),
-      amount: Number(form.amount.value),
-      date: form.date.value,
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('workersForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.workers.unshift({
-      id: crypto.randomUUID(),
-      name: form.name.value.trim(),
-      role: form.role.value.trim(),
-      salary: Number(form.salary.value),
-      advance: Number(form.advance.value || 0),
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('partnersForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.partners.unshift({
-      id: crypto.randomUUID(),
-      name: form.name.value.trim(),
-      type: form.type.value,
-      phone: form.phone.value.trim(),
-      note: form.note.value.trim(),
-    });
-    form.reset();
-    renderAll();
-  });
-
-  document.getElementById('settingsForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    state.settings.factoryName = form.factoryName.value.trim() || defaults.settings.factoryName;
-    state.settings.currency = 'LYD';
-    state.settings.taxRate = Number(form.taxRate.value || defaults.settings.taxRate);
-    renderAll();
-    alert('تم حفظ الإعدادات بنجاح');
-  });
+function bindSearch() { Object.entries(tableConfig).forEach(([key, config]) => $(config.search).addEventListener('input', (event) => { filters[key] = normalize(event.target.value); renderTables(); })); }
+function bindActions() {
+  $('dashboardMonth').value = monthKey(); $('reportsMonth').value = monthKey();
+  $('dashboardMonth').addEventListener('change', renderDashboard); $('reportsMonth').addEventListener('change', renderReports);
+  $('resetDemoBtn').addEventListener('click', async () => { if (!confirm('سيتم استبدال البيانات الحالية ببيانات تجريبية. اكتب موافقًا بالضغط على موافق للمتابعة.')) return; state = seedState(defaults()); await changed('تمت إعادة البيانات التجريبية'); });
+  $('exportDataBtn').addEventListener('click', () => { const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `graphite-backup-${today()}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 500); });
+  $('importDataInput').addEventListener('change', async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const imported = JSON.parse(await file.text()); const next = mergeState(defaults(), imported); const check = validateState(next); if (check) throw new Error(check); state = next; await changed('تم استيراد النسخة الاحتياطية'); } catch (error) { notify(`تعذر الاستيراد: ${error.message}`, true); } event.target.value = ''; });
 }
 
-function attachSearch() {
-  Object.entries(tableConfigs).forEach(([key, config]) => {
-    config.search.addEventListener('input', (event) => {
-      activeFilters[key] = normalizeSearchText(event.target.value);
-      renderTables();
-    });
-  });
-}
+function validateState(value) { if (!Array.isArray(value.products) || !Array.isArray(value.imports) || !Array.isArray(value.exports)) return 'مخطط الملف غير صحيح'; if (value.products.some((p) => !p.id || !p.name)) return 'يوجد صنف بلا معرف أو اسم'; if (calculateInventory(value).error) return calculateInventory(value).error; return ''; }
+async function changed(message) { normalizeState(); const result = calculateInventory(); if (result.error) { notify(result.error, true); return; } renderAll(); await saveState(); notify(message); }
+function notify(message, isError = false) { const toast = $('toast'); toast.textContent = message; toast.className = `toast show ${isError ? 'error' : ''}`; setTimeout(() => toast.classList.remove('show'), 3000); }
 
-function attachActions() {
-  reportMonthInput.value = currentMonthKey();
-  reportMonthInput.addEventListener('change', renderReports);
-
-  document.getElementById('resetDemoBtn').addEventListener('click', () => {
-    const confirmReset = confirm('سيتم استبدال البيانات الحالية ببيانات تجريبية. هل تريد المتابعة؟');
-    if (!confirmReset) return;
-    Object.assign(state, structuredClone(defaults));
-    renderAll();
-  });
-
-  document.getElementById('exportDataBtn').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'graphite-factory-data.json';
-    link.click();
-    URL.revokeObjectURL(url);
-  });
-
-  document.getElementById('importDataInput').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      // Merge safely but prevent imported file from changing the enforced currency
-      const merged = mergeState(defaults, parsed);
-      if (merged.settings) delete merged.settings.currency;
-      Object.assign(state, merged);
-      // enforce local currency to LYD
-      state.settings.currency = 'LYD';
-      renderAll();
-      event.target.value = '';
-    } catch {
-      alert('تعذر قراءة الملف. تأكد أنه ملف JSON صحيح.');
-    }
-  });
-}
-
-function renderSettingsForm() {
-  const form = document.getElementById('settingsForm');
-  form.factoryName.value = state.settings.factoryName;
-  form.currency.value = 'LYD';
-  form.currency.readOnly = true;
-  form.taxRate.value = state.settings.taxRate;
-  document.querySelector('.topbar h2').textContent = `${state.settings.factoryName} - مؤشرات المصنع والعمليات اليومية`;
-}
-
-function renderDashboard() {
-  const revenue = sum(state.exports.map((entry) => entry.revenue));
-  const expenses = sum(state.expenses.map((entry) => entry.amount));
-  const importsCost = sum(state.imports.map((entry) => entry.cost));
-  const payroll = sum(state.workers.map((entry) => entry.salary - entry.advance));
-  const netProfit = revenue - expenses - payroll;
-  const lowStock = state.inventory.filter((item) => item.qty <= item.minLevel).length;
-
-  const stats = [
-    { label: 'إجمالي الإيرادات', value: revenue, money: true },
-    { label: 'إجمالي المصاريف', value: expenses + payroll, money: true },
-    { label: 'صافي الربح', value: netProfit, money: true },
-    { label: 'تنبيهات المخزون', value: lowStock, money: false },
-  ];
-
-  const currency = currencyFormatter(state.settings.currency);
-  document.getElementById('statsGrid').innerHTML = stats.map((item) => `
-    <article class="stat-card">
-      <span>${item.label}</span>
-      <strong>${item.money ? currency.format(item.value) : item.value}</strong>
-      <small>${item.label === 'تنبيهات المخزون' ? 'أصناف تحتاج متابعة' : 'محدثة الآن'}</small>
-    </article>
-  `).join('');
-
-  document.getElementById('financialChart').innerHTML = [
-    ['الإيرادات', revenue, 'var(--brand)'],
-    ['المصاريف', expenses + payroll, 'var(--danger)'],
-    ['الواردات', importsCost, 'var(--brand-2)'],
-    ['صافي الربح', Math.max(netProfit, 0), '#a78bfa'],
-  ].map(([label, value, color]) => {
-    const max = Math.max(revenue, expenses + payroll, importsCost, Math.max(netProfit, 0), 1);
-    const width = Math.round((value / max) * 100);
-    return `
-      <div class="chart-row">
-        <strong>${label}</strong>
-        <div class="bar-track"><div class="bar-fill" style="width:${width}%; background:${color};"></div></div>
-        <span>${currency.format(value)}</span>
-      </div>
-    `;
-  }).join('');
-
-  const alerts = [];
-  state.inventory
-    .filter((item) => item.qty <= item.minLevel)
-    .slice(0, 3)
-    .forEach((item) => alerts.push(`الصنف ${item.name} وصل إلى الحد الأدنى.`));
-  if (!alerts.length) alerts.push('لا توجد تنبيهات حرجة حالياً.');
-  alerts.push(`إجمالي الواردات المسجلة: ${currency.format(importsCost)}.`);
-
-  document.getElementById('alertsList').innerHTML = alerts.map((message) => `<li>${message}</li>`).join('');
-}
-
-function renderTables() {
-  renderTable('inventory', state.inventory, (item) => [
-    item.name,
-    item.category,
-    `${item.qty} ${item.unit}`,
-    item.minLevel,
-  ], (item) => item.qty <= item.minLevel);
-
-  renderTable('imports', state.imports, (item) => [
-    item.date,
-    item.supplier,
-    item.item,
-    item.qty,
-    money(item.cost),
-  ]);
-
-  renderTable('exports', state.exports, (item) => [
-    item.date,
-    item.customer,
-    item.item,
-    item.qty,
-    money(item.revenue),
-  ]);
-
-  renderTable('expenses', state.expenses, (item) => [
-    item.date,
-    item.type,
-    item.description,
-    money(item.amount),
-  ]);
-
-  renderTable('workers', state.workers, (item) => [
-    item.name,
-    item.role,
-    money(item.salary),
-    money(item.advance),
-    money(item.salary - item.advance),
-  ]);
-
-  renderTable('partners', state.partners, (item) => [
-    item.name,
-    item.type,
-    item.phone,
-    item.note || '-',
-  ]);
-}
-
-function renderTable(key, rows, mapCells, highlightFn) {
-  const config = tableConfigs[key];
-  const query = activeFilters[key];
-  const filtered = rows.filter((row) => {
-    if (!query) return true;
-    return Object.values(row).some((value) => normalizeSearchText(value).includes(query));
-  });
-
-  config.tbody.innerHTML = filtered.length
-    ? filtered.map((row) => `
-      <tr class="${highlightFn?.(row) ? 'warn-row' : ''}">
-        ${mapCells(row).map((cell) => `<td>${cell}</td>`).join('')}
-        <td>
-          <div class="table-actions">
-            <button class="ghost-btn" type="button" data-edit="${key}" data-id="${row.id}">تعديل</button>
-            ${key === 'exports' ? `<button class="ghost-btn" type="button" data-print="invoice" data-id="${row.id}">طباعة فاتورة</button>` : ''}
-            ${key === 'workers' ? `<button class="ghost-btn" type="button" data-print="payroll" data-id="${row.id}">طباعة راتب</button>` : ''}
-            <button class="danger-btn" type="button" data-delete="${key}" data-id="${row.id}">حذف</button>
-          </div>
-        </td>
-      </tr>
-    `).join('')
-    : `<tr><td colspan="${mapCells(rows[0] || {}).length + 1}">لا توجد بيانات مطابقة</td></tr>`;
-
-  config.tbody.querySelectorAll('[data-edit]').forEach((button) => {
-    button.addEventListener('click', () => openEditModal(button.dataset.edit, button.dataset.id));
-  });
-
-  config.tbody.querySelectorAll('[data-print]').forEach((button) => {
-    button.addEventListener('click', () => printRecord(button.dataset.print, key, button.dataset.id));
-  });
-
-  config.tbody.querySelectorAll('[data-delete]').forEach((button) => {
-    button.addEventListener('click', () => removeRecord(button.dataset.delete, button.dataset.id));
-  });
-}
-
-// Modal-based editing
-const editModal = document.getElementById('editModal');
-const editForm = document.getElementById('editForm');
-const editFields = document.getElementById('editFields');
-const editCancel = document.getElementById('editCancel');
-const editModalClose = document.getElementById('editModalClose');
-
-function openEditModal(key, id) {
-  const record = state[key].find((item) => item.id === id);
-  if (!record) return;
-  editFields.innerHTML = '';
-  editForm.dataset.key = key;
-  editForm.dataset.id = id;
-
-  for (const field of recordSchemas[key]) {
-    const wrapper = document.createElement('div');
-    const input = document.createElement(field.type === 'number' ? 'input' : 'input');
-    input.name = field.key;
-    input.placeholder = field.label;
-    if (field.type === 'number') input.type = 'number';
-    if (field.type === 'date') input.type = 'date';
-    input.value = record[field.key] ?? '';
-    wrapper.appendChild(input);
-    editFields.appendChild(wrapper);
+function product(id) { return state.products.find((p) => p.id === id); }
+function landedCost(entry) { return num(entry.cost) + num(entry.freight) + num(entry.duty) + num(entry.otherCost); }
+function calculateInventory(source = state) {
+  const result = {}; source.products.forEach((p) => { result[p.id] = { ...p, qty: num(p.openingQty), value: num(p.openingQty) * num(p.openingCost), avgCost: num(p.openingCost), cogs: 0 }; });
+  const movements = [...source.imports.map((x) => ({ ...x, kind: 'in' })), ...source.exports.map((x) => ({ ...x, kind: 'out' }))].sort((a, b) => `${a.date || ''}${a.id}`.localeCompare(`${b.date || ''}${b.id}`));
+  for (const movement of movements) {
+    const item = result[movement.itemId]; if (!item) continue;
+    if (movement.kind === 'in') { const value = landedCost(movement); item.qty += num(movement.qty); item.value += value; item.avgCost = item.qty ? item.value / item.qty : 0; }
+    else { if (item.qty - num(movement.qty) < -0.000001) return { error: `الرصيد غير كافٍ للصنف: ${item.name}` }; const cogs = num(movement.qty) * item.avgCost; item.qty -= num(movement.qty); item.value -= cogs; item.cogs += cogs; item.avgCost = item.qty ? item.value / item.qty : 0; movement._cogs = cogs; }
   }
-
-  editModal.setAttribute('aria-hidden', 'false');
-  document.body.style.overflow = 'hidden';
+  return { items: result, movements };
 }
 
-function closeEditModal() {
-  editModal.setAttribute('aria-hidden', 'true');
-  document.body.style.overflow = '';
-  editFields.innerHTML = '';
-  delete editForm.dataset.key;
-  delete editForm.dataset.id;
-}
+function renderAll() { renderSettings(); renderDashboard(); renderTables(); renderReports(); fillProductSelects(); }
+function renderSettings() { $('pageTitle').textContent = `${state.settings.factoryName} - مؤشرات المصنع والعمليات اليومية`; $('settingsForm').factoryName.value = state.settings.factoryName; $('settingsForm').currency.value = state.settings.currency; $('settingsForm').taxRate.value = state.settings.taxRate; }
+function periodData(month) { const inv = calculateInventory(); const exports = state.exports.filter((x) => monthKey(x.date) === month); const imports = state.imports.filter((x) => monthKey(x.date) === month); const expenses = state.expenses.filter((x) => monthKey(x.date) === month); const payroll = state.payroll.filter((x) => x.month === month); const revenue = sum(exports.map((x) => x.revenue)); const cogs = sum(exports.map((x) => { const item = inv.movements.find((m) => m.id === x.id); return item?._cogs || num(x.qty) * (product(x.itemId)?.openingCost || 0); })); const operating = sum(expenses.map((x) => x.amount)); const salaries = sum(payroll.map((x) => x.salary)); return { exports, imports, expenses, payroll, revenue, cogs, operating, salaries, net: revenue - cogs - operating - salaries, inv }; }
+function renderDashboard() { const data = periodData($('dashboardMonth').value || monthKey()); const all = calculateInventory(); const low = Object.values(all.items || {}).filter((x) => x.qty <= x.minLevel).length; const stats = [['إيرادات الشهر', data.revenue, true], ['تكلفة المبيعات', data.cogs, true], ['المصروفات والرواتب', data.operating + data.salaries, true], ['صافي الربح', data.net, true], ['تنبيهات المخزون', low, false]]; $('statsGrid').innerHTML = stats.map(([label, value, isMoney]) => `<article class="stat-card"><span>${esc(label)}</span><strong class="${isMoney && value < 0 ? 'negative' : ''}">${isMoney ? money(value) : value}</strong><small>${isMoney ? 'للشهر المحدد' : 'أصناف تحت الحد'}</small></article>`).join(''); const chart = [['الإيرادات', data.revenue, 'var(--brand)'], ['COGS', data.cogs, 'var(--danger)'], ['المصروفات والرواتب', data.operating + data.salaries, 'var(--warning)'], ['صافي الربح', data.net, 'var(--brand-2)']]; const max = Math.max(...chart.map((x) => Math.abs(x[1])), 1); $('financialChart').innerHTML = chart.map(([label, value, color]) => `<div class="chart-row"><strong>${esc(label)}</strong><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, Math.round(Math.abs(value) / max * 100))}%;background:${color}"></div></div><span class="${value < 0 ? 'negative' : ''}">${money(value)}</span></div>`).join(''); const alerts = Object.values(all.items || {}).filter((x) => x.qty <= x.minLevel).map((x) => `الصنف ${x.name} وصل إلى حد إعادة الطلب (${x.qty} ${x.unit}).`); if (!alerts.length) alerts.push('لا توجد أصناف تحت حد إعادة الطلب.'); $('alertsList').innerHTML = alerts.slice(0, 6).map((x) => `<li>${esc(x)}</li>`).join(''); }
 
-editCancel.addEventListener('click', closeEditModal);
-editModalClose.addEventListener('click', closeEditModal);
-editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+function fillProductSelects() { [['importItem','اختر الصنف'], ['exportItem','اختر الصنف']].forEach(([id, placeholder]) => { const select = $(id); const selected = select.value; select.innerHTML = `<option value="">${placeholder}</option>` + state.products.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.unit)})</option>`).join(''); if (state.products.some((p) => p.id === selected)) select.value = selected; }); }
+function filtered(rows, key, extra = '') { const query = filters[key]; return rows.filter((row) => !query || Object.values(row).some((value) => normalize(value).includes(query))).filter((row) => !extra || extra(row)); }
+function actionButtons(key, id) { return `<button class="danger-btn" type="button" data-delete="${esc(key)}" data-id="${esc(id)}">حذف</button>`; }
+function renderTables() { const inv = calculateInventory(); renderTable('inventory', Object.values(inv.items || {}), (row) => { const low = row.qty <= row.minLevel; return [esc(row.name), esc(row.category), num(row.qty).toFixed(2), esc(row.unit), money(row.avgCost), money(row.value), `<span class="status ${low ? 'status-warn' : 'status-ok'}">${low ? 'إعادة طلب' : 'جيد'}</span>`]; }, (row) => row.qty <= row.minLevel); renderTable('imports', state.imports, (row) => { const p = product(row.itemId); const total = landedCost(row); return [esc(row.date), esc(row.supplier), esc(p?.name || 'صنف محذوف'), num(row.qty).toFixed(2), money(total), money(row.qty ? total / row.qty : 0)]; }); renderTable('exports', state.exports, (row) => { const p = product(row.itemId); const movement = inv.movements.find((x) => x.id === row.id); const cogs = movement?._cogs || 0; return [esc(row.date), esc(row.customer), esc(p?.name || 'صنف محذوف'), num(row.qty).toFixed(2), money(row.revenue), money(cogs), `<span class="${row.revenue - cogs < 0 ? 'negative' : ''}">${money(row.revenue - cogs)}</span>`]; }); renderTable('expenses', state.expenses, (row) => [esc(row.date), esc(row.type), esc(row.description), money(row.amount), row.paymentStatus === 'paid' ? 'مدفوع' : 'مستحق']); renderTable('workers', state.payroll, (row) => [esc(row.month), esc(row.name), esc(row.role), money(row.salary), money(row.advance), money(row.salary - row.advance)]); renderTable('partners', state.partners, (row) => [esc(row.name), esc(row.type), esc(row.phone), esc(row.note || '-')]); }
+function renderTable(key, rows, cells, highlight) { const config = tableConfig[key]; const filteredRows = filtered(rows, key); $(config.tbody).innerHTML = filteredRows.length ? filteredRows.map((row) => `<tr class="${highlight?.(row) ? 'warn-row' : ''}">${cells(row).map((cell) => `<td>${cell}</td>`).join('')}<td class="table-actions">${actionButtons(key, row.id)}</td></tr>`).join('') : `<tr><td colspan="12" class="empty">لا توجد بيانات مطابقة</td></tr>`; $(config.tbody).querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', () => removeRecord(button.dataset.delete, button.dataset.id))); }
+async function removeRecord(key, id) { if (!confirm('حذف السجل؟ سيتم إعادة احتساب الأرصدة والتقارير.')) return; if (key === 'inventory') { const used = state.imports.some((x) => x.itemId === id) || state.exports.some((x) => x.itemId === id); if (used) return notify('لا يمكن حذف صنف مرتبط بحركات. احذفه من الاستخدام أو اتركه للأرشيف.', true); state.products = state.products.filter((x) => x.id !== id); } else { const collection = key === 'workers' ? 'payroll' : key; state[collection] = state[collection].filter((x) => x.id !== id); } await changed('تم حذف السجل وإعادة الحساب'); }
 
-editForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const key = editForm.dataset.key;
-  const id = editForm.dataset.id;
-  if (!key || !id) return closeEditModal();
-  const formData = new FormData(editForm);
-  const updated = {};
-  for (const field of recordSchemas[key]) {
-    let val = formData.get(field.key);
-    if (field.type === 'number') {
-      val = Number(val);
-      if (!Number.isFinite(val)) val = 0;
-    }
-    updated[field.key] = val;
-  }
-  // keep other fields intact (like id, date when not present)
-  state[key] = state[key].map((item) => item.id === id ? { ...item, ...updated } : item);
-  closeEditModal();
-  renderAll();
-});
-
-function printRecord(mode, key, id) {
-  const record = state[key].find((item) => item.id === id);
-  if (!record) return;
-
-  const currency = currencyFormatter(state.settings.currency);
-  const content = mode === 'invoice'
-    ? `
-      <div class="print-card">
-        <h1>فاتورة تصدير</h1>
-        <p>المصنع: ${state.settings.factoryName}</p>
-        <p>العميل: ${record.customer}</p>
-        <p>المنتج: ${record.item}</p>
-        <p>الكمية: ${record.qty}</p>
-        <p>الإيراد: ${currency.format(record.revenue)}</p>
-        <p>التاريخ: ${record.date}</p>
-      </div>
-    `
-    : `
-      <div class="print-card">
-        <h1>كشف راتب</h1>
-        <p>المصنع: ${state.settings.factoryName}</p>
-        <p>العامل: ${record.name}</p>
-        <p>الوظيفة: ${record.role}</p>
-        <p>الراتب: ${currency.format(record.salary)}</p>
-        <p>السلفة: ${currency.format(record.advance)}</p>
-        <p>الصافي: ${currency.format(record.salary - record.advance)}</p>
-      </div>
-    `;
-
-  const popup = window.open('', '_blank', 'width=900,height=700');
-  if (!popup) {
-    // popup blocked — fallback to hidden iframe printing
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      doc.open();
-      doc.write(`
-        <!doctype html>
-        <html lang="ar" dir="rtl">
-        <head>
-          <meta charset="UTF-8" />
-          <title>طباعة</title>
-          <style>body{font-family: Cairo, sans-serif; padding:40px; color:#102235;} .print-card{border:1px solid #d7e1ec;border-radius:18px;padding:24px;max-width:640px;margin:0 auto;} h1{margin-top:0;} p{font-size:18px;line-height:1.8;}</style>
-        </head>
-        <body>${content}</body>
-        </html>
-      `);
-      doc.close();
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-      setTimeout(() => document.body.removeChild(iframe), 1500);
-    } catch (e) {
-      alert('تعذر فتح نافذة الطباعة أو الطباعة من الإطار.');
-    }
-    return;
-  }
-  popup.document.write(`
-    <!doctype html>
-    <html lang="ar" dir="rtl">
-    <head>
-      <meta charset="UTF-8" />
-      <title>طباعة</title>
-      <style>
-        body { font-family: 'Cairo', sans-serif; padding: 40px; color: #102235; }
-        .print-card { border: 1px solid #d7e1ec; border-radius: 18px; padding: 24px; max-width: 640px; margin: 0 auto; }
-        h1 { margin-top: 0; }
-        p { font-size: 18px; line-height: 1.8; }
-      </style>
-    </head>
-    <body>${content}</body>
-    </html>
-  `);
-  popup.document.close();
-  popup.focus();
-  popup.print();
-}
-
-function removeRecord(key, id) {
-  if (!confirm('هل تريد حذف هذا السجل؟')) return;
-  state[key] = state[key].filter((item) => item.id !== id);
-  renderAll();
-}
-
-function renderReports() {
-  const selectedMonth = reportMonthInput.value || currentMonthKey();
-  const revenue = sum(state.exports.map((entry) => entry.revenue));
-  const expenses = sum(state.expenses.map((entry) => entry.amount));
-  const payroll = sum(state.workers.map((entry) => entry.salary - entry.advance));
-  const importsCost = sum(state.imports.map((entry) => entry.cost));
-  const net = revenue - expenses - payroll;
-  const currency = currencyFormatter(state.settings.currency);
-
-  const metrics = [
-    ['الإيرادات', currency.format(revenue)],
-    ['الواردات', currency.format(importsCost)],
-    ['المصاريف التشغيلية', currency.format(expenses + payroll)],
-    ['صافي الربح', currency.format(net)],
-  ];
-
-  document.getElementById('reportMetrics').innerHTML = metrics.map(([label, value]) => `
-    <div class="metric-item"><span>${label}</span><strong>${value}</strong></div>
-  `).join('');
-
-  const expensesByType = Object.entries(
-    state.expenses.reduce((acc, item) => {
-      acc[item.type] = (acc[item.type] || 0) + item.amount;
-      return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-  document.getElementById('expenseBreakdown').innerHTML = expensesByType.length
-    ? expensesByType.map(([type, total]) => `<li>${type}: ${currency.format(total)}</li>`).join('')
-    : '<li>لا توجد مصاريف مسجلة</li>';
-
-  renderMonthlySummary(selectedMonth, currency);
-}
-
-function renderMonthlySummary(selectedMonth, currency) {
-  const monthExports = state.exports.filter((entry) => entry.date?.startsWith(selectedMonth));
-  const monthImports = state.imports.filter((entry) => entry.date?.startsWith(selectedMonth));
-  const monthExpenses = state.expenses.filter((entry) => entry.date?.startsWith(selectedMonth));
-  const exportTotal = sum(monthExports.map((entry) => entry.revenue));
-  const importTotal = sum(monthImports.map((entry) => entry.cost));
-  const expenseTotal = sum(monthExpenses.map((entry) => entry.amount));
-  const payrollTotal = sum(state.workers.map((entry) => entry.salary - entry.advance));
-  const netTotal = exportTotal - importTotal - expenseTotal - payrollTotal;
-
-  monthlySummaryContainer.innerHTML = [
-    ['الشهر', selectedMonth],
-    ['إجمالي الصادرات', currency.format(exportTotal)],
-    ['إجمالي الواردات', currency.format(importTotal)],
-    ['إجمالي المصاريف', currency.format(expenseTotal)],
-    ['الرواتب الحالية', currency.format(payrollTotal)],
-    ['الصافي الشهري', currency.format(netTotal)],
-  ].map(([label, value]) => `
-    <div class="monthly-card">
-      <span>${label}</span>
-      <strong>${value}</strong>
-    </div>
-  `).join('');
-}
-
-function sum(values) {
-  return values.reduce((total, value) => total + Number(value || 0), 0);
-}
-
-function money(amount) {
-  return currencyFormatter(state.settings.currency).format(Number(amount || 0));
-}
-
-function todayOffset(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function currentMonthKey() {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function normalizeSearchText(value) {
-  return String(value ?? '')
-    .normalize('NFKD')
-    .replace(/[\u064b-\u065f\u0670\u0640]/g, '')
-    // unify hamza variations to bare alef
-    .replace(/[أإآ]/g, 'ا')
-    // convert alif maqsura to ya
-    .replace(/ى/g, 'ي')
-    // remove tatweel
-    .replace(/ـ/g, '')
-    // convert Arabic-Indic digits to Latin digits
-    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-    .toLowerCase()
-    .trim();
-}
+function renderReports() { const data = periodData($('reportsMonth').value || monthKey()); const metrics = [['الإيرادات', money(data.revenue)], ['تكلفة المبيعات', money(data.cogs)], ['المصروفات التشغيلية', money(data.operating)], ['الرواتب', money(data.salaries)], ['صافي الربح', money(data.net)]]; $('reportMetrics').innerHTML = metrics.map(([label, value]) => `<div class="metric-item"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join(''); const grouped = {}; data.expenses.forEach((x) => { grouped[x.type] = (grouped[x.type] || 0) + num(x.amount); }); const breakdown = Object.entries(grouped).sort((a, b) => b[1] - a[1]); $('expenseBreakdown').innerHTML = breakdown.length ? breakdown.map(([type, total]) => `<li>${esc(type)}: ${money(total)}</li>`).join('') : '<li>لا توجد مصروفات في الشهر المحدد</li>'; $('monthlySummary').innerHTML = [['الشهر', $('reportsMonth').value], ['المبيعات', money(data.revenue)], ['تكلفة المبيعات', money(data.cogs)], ['المصروفات', money(data.operating)], ['الرواتب', money(data.salaries)], ['صافي الربح', money(data.net)]].map(([label, value]) => `<div class="monthly-card"><span>${esc(label)}</span><strong class="${String(value).includes('-') ? 'negative' : ''}">${esc(value)}</strong></div>`).join(''); }

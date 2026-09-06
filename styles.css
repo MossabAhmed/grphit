@@ -527,3 +527,18 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Enhancements for the medium-factory workflow */
+:root { --warning: #d97706; }
+.period-input { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: #fff; color: var(--text); }
+.negative { color: #b91c1c !important; }
+.status { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: .78rem; font-weight: 700; }
+.status-ok { background: rgba(16,185,129,.12); color: #047857; }
+.status-warn { background: rgba(217,119,6,.14); color: #b45309; }
+.empty { text-align: center; color: var(--muted); padding: 28px; }
+.toast { position: fixed; left: 24px; bottom: 24px; z-index: 2000; transform: translateY(20px); opacity: 0; pointer-events: none; background: #064e3b; color: #fff; padding: 12px 18px; border-radius: 12px; box-shadow: var(--shadow); transition: .25s ease; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.error { background: #991b1b; }
+.table-actions { min-width: 80px; }
+@media (max-width: 720px) { .topbar, .section-head, .panel-head { flex-direction: column; } .period-input { width: 100%; } .toast { left: 16px; right: 16px; bottom: 16px; text-align: center; } }
