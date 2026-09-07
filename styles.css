@@ -569,3 +569,27 @@ tr:last-child td {
 .toast.error { background: #991b1b; }
 .table-actions { min-width: 80px; }
 @media (max-width: 720px) { .topbar, .section-head, .panel-head { flex-direction: column; } .period-input { width: 100%; } .toast { left: 16px; right: 16px; bottom: 16px; text-align: center; } }
+
+
+/* Same-page official document preview used by the browser print dialog. */
+.print-sheet { display: none; }
+.print-page { max-width: 900px; margin: 24px auto; padding: 28px; background: #fff; color: #172433; font-family: Arial, Tahoma, sans-serif; direction: rtl; }
+.print-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #173b64; padding-bottom: 16px; margin-bottom: 18px; }
+.print-brand h1 { margin: 0 0 5px; font-size: 24px; color: #173b64; }
+.print-brand p, .print-document div { margin: 3px 0; color: #60758c; }
+.print-document { text-align: left; direction: ltr; }
+.print-document h2 { margin: 0 0 7px; color: #173b64; font-size: 19px; }
+.print-page .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; background: #f3f7fb; border: 1px solid #d8e2ec; border-radius: 7px; padding: 12px; margin-bottom: 18px; }
+.print-page table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.print-page th { background: #173b64; color: #fff; }
+.print-page th, .print-page td { border: 1px solid #ccd8e3; padding: 9px; text-align: right; }
+.print-page tbody tr:nth-child(even) { background: #f7fafc; }
+.print-page .totals { margin-right: auto; width: 310px; border-top: 2px solid #173b64; }
+.print-page .totals div { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #d8e2ec; }
+.print-page .note { margin-top: 28px; padding: 12px; background: #fff8e8; border-right: 4px solid #d97706; color: #5b4a22; }
+.print-signature { margin-top: 48px; display: flex; justify-content: space-between; }
+.print-signature span { border-top: 1px solid #9aaabd; padding-top: 8px; width: 180px; text-align: center; }
+.print-footer { border-top: 1px solid #d8e2ec; margin-top: 42px; padding-top: 12px; color: #718397; display: flex; justify-content: space-between; }
+body.printing-document > *:not(.print-sheet) { display: none !important; }
+body.printing-document .print-sheet { display: block; }
+@media print { @page { size: A4; margin: 14mm; } body.printing-document { background: #fff; } body.printing-document .print-sheet { display: block; } .print-page { margin: 0; padding: 0; max-width: none; } }
