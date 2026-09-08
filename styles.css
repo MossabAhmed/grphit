@@ -593,3 +593,10 @@ tr:last-child td {
 body.printing-document > *:not(.print-sheet) { display: none !important; }
 body.printing-document .print-sheet { display: block; }
 @media print { @page { size: A4; margin: 14mm; } body.printing-document { background: #fff; } body.printing-document .print-sheet { display: block; } .print-page { margin: 0; padding: 0; max-width: none; } }
+
+
+.cancel-btn { border: 1px solid rgba(185, 28, 28, .22); border-radius: 12px; padding: 8px 12px; background: rgba(185, 28, 28, .08); color: #991b1b; cursor: pointer; font: inherit; }
+.cancel-btn:hover { background: rgba(185, 28, 28, .16); }
+.cancelled-row { opacity: .62; text-decoration: none; background: #fff7f7; }
+#productionSection .table-card h4, #receivablesSection .table-card h4 { margin: 0 0 12px; }
+#receivableStats { margin: 16px 0; }
