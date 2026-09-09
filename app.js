@@ -1,7 +1,8 @@
 const SUPABASE_URL = 'https://xhxbrqyvtsvsuokqurqy.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_yptw4w1qRmCVpityD3xOsw_0LL_u1ZZ';
 const SUPABASE_TABLE = 'factory_state';
-const CLOUD_ROW_ID = 'default';
+const CLOUD_ROW_ID = () => session?.user?.id;
+const SUPABASE_AUTH_URL = `${SUPABASE_URL}/auth/v1`;
 
 const $ = (id) => document.getElementById(id);
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -28,6 +29,8 @@ const defaults = () => ({
 const emptyState = () => defaults();
 function offsetDate(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
 let state = null;
+let session = null;
+let authSignUpMode = false;
 const filters = { inventory: '', imports: '', exports: '', expenses: '', workers: '', partners: '' };
 const sections = ['dashboard','inventory','imports','exports','expenses','workers','partners','production','receivables','reports','settings'];
 const tableConfig = { inventory: { tbody: 'inventoryTable', search: 'inventorySearch' }, imports: { tbody: 'importsTable', search: 'importsSearch' }, exports: { tbody: 'exportsTable', search: 'exportsSearch' }, expenses: { tbody: 'expensesTable', search: 'expensesSearch' }, workers: { tbody: 'workersTable', search: 'workersSearch' }, partners: { tbody: 'partnersTable', search: 'partnersSearch' } };
@@ -35,27 +38,58 @@ window.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   try {
-    state = await loadState();
-    normalizeState(); bindNavigation(); bindForms(); bindSearch(); bindActions(); populateUnitFields(); renderAll();
-    await saveState();
+    bindAuth();
+    session = await restoreSession();
+    if (!session) return showAuth();
+    await startApplication();
   } catch (error) {
     console.error(error);
-    alert(`تعذر الاتصال بقاعدة البيانات السحابية. تحقق من إعداد Supabase وجدول factory_state.\n${error.message}`);
+    showAuthMessage(`تعذر الاتصال: ${error.message}`, false);
+    showAuth();
   }
 }
 
+async function startApplication() {
+    hideAuth();
+    state = await loadState();
+    normalizeState(); bindNavigation(); bindForms(); bindSearch(); bindActions(); populateUnitFields(); renderAll();
+    await saveState();
+}
+
 async function supabaseRequest(path, options = {}) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', ...(options.headers || {}) } });
   if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
   return response.status === 204 ? null : response.json();
 }
 async function loadState() {
-  const rows = await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${encodeURIComponent(CLOUD_ROW_ID)}&select=state`);
+  const rows = await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${encodeURIComponent(CLOUD_ROW_ID())}&select=state`);
   return rows?.[0]?.state ? mergeState(emptyState(), rows[0].state) : emptyState();
 }
 async function saveState() {
-  await supabaseRequest(SUPABASE_TABLE, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: CLOUD_ROW_ID, state, updated_at: new Date().toISOString() }) });
+  await supabaseRequest(SUPABASE_TABLE, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: CLOUD_ROW_ID(), state, updated_at: new Date().toISOString() }) });
 }
+
+async function authRequest(path, body, method = 'POST') {
+  const response = await fetch(`${SUPABASE_AUTH_URL}/${path}`, { method, headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error_description || data.msg || data.message || 'بيانات الدخول غير صحيحة');
+  return data;
+}
+async function restoreSession() {
+  const saved = JSON.parse(localStorage.getItem('grphit-session') || 'null');
+  if (!saved?.refresh_token) return null;
+  try { const refreshed = await authRequest('token?grant_type=refresh_token', { refresh_token: saved.refresh_token }); localStorage.setItem('grphit-session', JSON.stringify(refreshed)); return refreshed; } catch { localStorage.removeItem('grphit-session'); return null; }
+}
+function bindAuth() {
+  $('authForm').addEventListener('submit', async (event) => { event.preventDefault(); const email = $('authEmail').value.trim(); const password = $('authPassword').value; $('authSubmit').disabled = true; showAuthMessage('جارٍ الاتصال...', true); try { const data = await authRequest(authSignUpMode ? 'signup' : 'token?grant_type=password', { email, password }); if (authSignUpMode && !data.access_token) { showAuthMessage('تم إنشاء الحساب. تحقق من بريدك الإلكتروني ثم سجّل الدخول.', true); authSignUpMode = false; updateAuthMode(); return; } session = data; localStorage.setItem('grphit-session', JSON.stringify(data)); await startApplication(); } catch (error) { showAuthMessage(error.message, false); } finally { $('authSubmit').disabled = false; } });
+  $('authModeToggle').addEventListener('click', () => { authSignUpMode = !authSignUpMode; updateAuthMode(); });
+  $('logoutBtn').addEventListener('click', async () => { try { await authRequest('logout', null); } catch {} localStorage.removeItem('grphit-session'); session = null; location.reload(); });
+  updateAuthMode();
+}
+function updateAuthMode() { $('authTitle').textContent = authSignUpMode ? 'إنشاء حساب' : 'تسجيل الدخول'; $('authSubtitle').textContent = authSignUpMode ? 'أنشئ حسابًا للوصول الآمن إلى بيانات المصنع.' : 'أدخل بيانات حسابك للوصول إلى بيانات المصنع السحابية.'; $('authSubmit').textContent = authSignUpMode ? 'إنشاء الحساب' : 'دخول'; $('authModeToggle').textContent = authSignUpMode ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد'; }
+function showAuth() { $('authScreen').hidden = false; $('appShell').hidden = true; }
+function hideAuth() { $('authScreen').hidden = true; $('appShell').hidden = false; }
+function showAuthMessage(message, success) { const el = $('authMessage'); el.textContent = message; el.className = `auth-message${success ? ' success' : ''}`; }
 
 function inferCategory(label) {
   const value = normalize(label);
