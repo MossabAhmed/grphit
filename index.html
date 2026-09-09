@@ -24,10 +24,10 @@
         <button class="nav-item" data-section="production">الإنتاج</button><button class="nav-item" data-section="receivables">الذمم المالية</button><button class="nav-item" data-section="reports">التقارير</button>
         <button class="nav-item" data-section="settings">الإعدادات</button>
       </nav>
-      <div class="sidebar-card"><div class="sidebar-card-label">قاعدة البيانات</div><strong>IndexedDB محلية</strong><p>تخزين مجاني داخل المتصفح مع تصدير احتياطي JSON.</p></div>
+      <div class="sidebar-card"><div class="sidebar-card-label">قاعدة البيانات</div><strong>Supabase سحابية</strong><p>قاعدة مشتركة بين الهاتف واللابتوب، وتبدأ فارغة بعد إنشاء الجدول.</p></div>
     </aside>
     <main class="main">
-      <header class="topbar"><div><p class="eyebrow">نظام مبسط لمصنع متوسط</p><h2 id="pageTitle">مؤشرات المصنع والعمليات اليومية</h2></div><div class="topbar-actions"><button class="ghost-btn" id="exportDataBtn">تصدير نسخة احتياطية</button><label class="ghost-btn file-btn">استيراد نسخة<input type="file" id="importDataInput" accept="application/json" hidden /></label><button class="danger-btn" id="resetDemoBtn">بيانات تجريبية</button></div></header>
+      <header class="topbar"><div><p class="eyebrow">نظام مبسط لمصنع متوسط</p><h2 id="pageTitle">مؤشرات المصنع والعمليات اليومية</h2></div><div class="topbar-actions"><button class="ghost-btn" id="exportDataBtn">تصدير نسخة احتياطية</button><label class="ghost-btn file-btn">استيراد نسخة<input type="file" id="importDataInput" accept="application/json" hidden /></label></div></header>
 
       <section id="dashboardSection" class="section active-section"><div class="stats-grid" id="statsGrid"></div><div class="panel-grid"><div class="panel wide-panel"><div class="panel-head"><div><h3>ملخص مالي</h3><p>الإيرادات وتكلفة المبيعات والمصروفات خلال الفترة المختارة</p></div><input class="period-input" id="dashboardMonth" type="month"></div><div class="chart-wrap" id="financialChart"></div></div><div class="panel"><div class="panel-head"><div><h3>تنبيهات</h3><p>حالات تحتاج متابعة</p></div></div><ul class="alerts" id="alertsList"></ul></div></div></section>
 

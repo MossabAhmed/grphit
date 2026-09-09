@@ -1,7 +1,7 @@
-const DB_NAME = 'graphite-factory-db';
-const DB_VERSION = 1;
-const STORE_NAME = 'app-state';
-const LEGACY_KEY = 'graphite-factory-dashboard-v1';
+const SUPABASE_URL = 'https://xhxbrqyvtsvsuokqurqy.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_yptw4w1qRmCVpityD3xOsw_0LL_u1ZZ';
+const SUPABASE_TABLE = 'factory_state';
+const CLOUD_ROW_ID = 'default';
 
 const $ = (id) => document.getElementById(id);
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -23,139 +23,38 @@ const unitInfo = (category, id) => UNIT_CATEGORIES[category]?.units.find((unit) 
 const unitLabel = (category, id) => unitInfo(category, id)?.label || id || '-';
 
 const defaults = () => ({
-  version: 2,
-  settings: { factoryName: 'مصنع الجرافيت', currency: 'LYD' },
-  products: [
-    { id: uid(), name: 'مسحوق جرافيت', category: 'خام', unitCategory: 'weight', baseUnit: 'kg', openingQty: 42000, openingCost: 1.1, minLevel: 10000, alternateUnits: [{ id: 'ton', label: 'طن', factorToBase: 1000 }] },
-    { id: uid(), name: 'قوالب ضغط', category: 'معدات', unitCategory: 'count', baseUnit: 'piece', openingQty: 8, openingCost: 600, minLevel: 3, alternateUnits: [] },
-    { id: uid(), name: 'منتج نهائي A', category: 'نهائي', unitCategory: 'count', baseUnit: 'box', openingQty: 120, openingCost: 320, minLevel: 30, alternateUnits: [] },
-  ],
-  imports: [
-    { id: uid(), supplier: 'شركة الشرق', itemId: '', qty: 20, cost: 25000, freight: 1000, duty: 400, otherCost: 0, date: offsetDate(-10) },
-    { id: uid(), supplier: 'مؤسسة النور', itemId: '', qty: 12, cost: 4800, freight: 200, duty: 0, otherCost: 0, date: offsetDate(-5) },
-  ],
-  exports: [],
-  expenses: [
-    { id: uid(), type: 'كهرباء', description: 'فاتورة التشغيل الشهرية', amount: 4200, date: offsetDate(-7), paymentStatus: 'paid' },
-    { id: uid(), type: 'صيانة', description: 'صيانة خط الإنتاج', amount: 5600, date: offsetDate(-2), paymentStatus: 'paid' },
-    { id: uid(), type: 'نقل', description: 'شحن داخلي', amount: 900, date: offsetDate(-1), paymentStatus: 'paid' },
-  ],
-  payroll: [
-    { id: uid(), name: 'أحمد سالم', role: 'مشرف إنتاج', salary: 9500, advance: 1500, month: monthKey() },
-    { id: uid(), name: 'محمود علي', role: 'فني تشغيل', salary: 7200, advance: 0, month: monthKey() },
-    { id: uid(), name: 'سعيد حسن', role: 'عامل تعبئة', salary: 5600, advance: 600, month: monthKey() },
-  ],
-  partners: [
-    { id: uid(), name: 'شركة الشرق', type: 'مورد', phone: '0123456789', note: 'مورد المواد الخام' },
-    { id: uid(), name: 'مصنع البناء الحديث', type: 'عميل', phone: '0112233445', note: 'عميل دوري' },
-  ],
+  version: 2, settings: { factoryName: 'مصنع الجرافيت', currency: 'LYD' }, products: [], imports: [], exports: [], expenses: [], payroll: [], partners: [], production: [],
 });
-
+const emptyState = () => defaults();
 function offsetDate(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
 let state = null;
-let db = null;
 const filters = { inventory: '', imports: '', exports: '', expenses: '', workers: '', partners: '' };
 const sections = ['dashboard','inventory','imports','exports','expenses','workers','partners','production','receivables','reports','settings'];
-
-const tableConfig = {
-  inventory: { tbody: 'inventoryTable', search: 'inventorySearch' },
-  imports: { tbody: 'importsTable', search: 'importsSearch' },
-  exports: { tbody: 'exportsTable', search: 'exportsSearch' },
-  expenses: { tbody: 'expensesTable', search: 'expensesSearch' },
-  workers: { tbody: 'workersTable', search: 'workersSearch' },
-  partners: { tbody: 'partnersTable', search: 'partnersSearch' },
-};
-
+const tableConfig = { inventory: { tbody: 'inventoryTable', search: 'inventorySearch' }, imports: { tbody: 'importsTable', search: 'importsSearch' }, exports: { tbody: 'exportsTable', search: 'exportsSearch' }, expenses: { tbody: 'expensesTable', search: 'expensesSearch' }, workers: { tbody: 'workersTable', search: 'workersSearch' }, partners: { tbody: 'partnersTable', search: 'partnersSearch' } };
 window.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   try {
-    db = await openDatabase();
     state = await loadState();
-    normalizeState();
-    bindNavigation();
-    bindForms();
-    bindSearch();
-    bindActions();
-    populateUnitFields();
-    renderAll();
+    normalizeState(); bindNavigation(); bindForms(); bindSearch(); bindActions(); populateUnitFields(); renderAll();
     await saveState();
   } catch (error) {
     console.error(error);
-    alert('تعذر فتح قاعدة البيانات المحلية. جرّب متصفحًا حديثًا أو اسمح بالتخزين المحلي.');
+    alert(`تعذر الاتصال بقاعدة البيانات السحابية. تحقق من إعداد Supabase وجدول factory_state.\n${error.message}`);
   }
 }
 
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+async function supabaseRequest(path, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
+  return response.status === 204 ? null : response.json();
 }
-
-function readDatabase() {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const request = tx.objectStore(STORE_NAME).get('state');
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function saveState() {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(state, 'state');
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
 async function loadState() {
-  const stored = await readDatabase();
-  if (stored) return mergeState(defaults(), stored);
-  const legacy = localStorage.getItem(LEGACY_KEY);
-  if (legacy) {
-    try { return migrateLegacy(JSON.parse(legacy)); } catch { /* use demo data */ }
-  }
-  return seedState(defaults());
+  const rows = await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${encodeURIComponent(CLOUD_ROW_ID)}&select=state`);
+  return rows?.[0]?.state ? mergeState(emptyState(), rows[0].state) : emptyState();
 }
-
-function seedState(value) {
-  const productIds = value.products.map((p) => p.id);
-  value.imports.forEach((entry, index) => { entry.itemId = productIds[index % productIds.length]; });
-  value.exports.push({ id: uid(), customer: 'مصنع البناء الحديث', itemId: productIds[2], qty: 30, revenue: 18600, paid: 12000, date: offsetDate(-8) });
-  value.exports.push({ id: uid(), customer: 'شركة المواد الصناعية', itemId: productIds[2], qty: 18, revenue: 14100, paid: 14100, date: offsetDate(-3) });
-  return value;
-}
-
-function migrateLegacy(old) {
-  const value = defaults();
-  if (Array.isArray(old.inventory) && old.inventory.length) value.products = [];
-  (old.inventory || []).forEach((item) => value.products.push({ id: uid(), name: item.name, category: item.category || 'عام', unit: item.unit || 'وحدة', openingQty: num(item.qty), openingCost: 0, minLevel: num(item.minLevel) }));
-  const allProducts = new Map(value.products.map((p) => [normalize(p.name), p.id]));
-  value.imports = (old.imports || []).map((x) => ({ id: x.id || uid(), supplier: x.supplier || '', itemId: allProducts.get(normalize(x.item)) || value.products[0].id, qty: num(x.qty), enteredQty: num(x.qty), enteredUnit: 'base', cost: num(x.cost), freight: 0, duty: 0, otherCost: 0, date: x.date || today() }));
-  value.exports = (old.exports || []).map((x) => ({ id: x.id || uid(), customer: x.customer || '', itemId: allProducts.get(normalize(x.item)) || value.products[0].id, qty: num(x.qty), enteredQty: num(x.qty), enteredUnit: 'base', revenue: num(x.revenue), paid: 0, date: x.date || today() }));
-  value.expenses = (old.expenses || []).map((x) => ({ ...x, amount: num(x.amount), paymentStatus: 'paid' }));
-  value.payroll = (old.workers || []).map((x) => ({ id: x.id || uid(), name: x.name || '', role: x.role || '', salary: num(x.salary), advance: num(x.advance), month: monthKey() }));
-  value.partners = old.partners || value.partners;
-  value.settings = { ...value.settings, ...(old.settings || {}) };
-  return value;
-}
-
-function mergeState(base, saved) {
-  const result = { ...base, ...saved, settings: { ...base.settings, ...(saved.settings || {}) } };
-  result.products = Array.isArray(saved.products) ? saved.products : (Array.isArray(saved.inventory) ? saved.inventory.map((x) => ({ ...x, openingQty: num(x.qty), openingCost: 0 })) : base.products);
-  result.imports = Array.isArray(saved.imports) ? saved.imports : base.imports;
-  result.exports = Array.isArray(saved.exports) ? saved.exports : base.exports;
-  result.expenses = Array.isArray(saved.expenses) ? saved.expenses : base.expenses;
-  result.payroll = Array.isArray(saved.payroll) ? saved.payroll : (saved.workers || base.payroll);
-  result.partners = Array.isArray(saved.partners) ? saved.partners : base.partners;
-  result.production = Array.isArray(saved.production) ? saved.production : [];
-  return result;
+async function saveState() {
+  await supabaseRequest(SUPABASE_TABLE, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: CLOUD_ROW_ID, state, updated_at: new Date().toISOString() }) });
 }
 
 function inferCategory(label) {
@@ -252,7 +151,6 @@ function bindActions() {
   $('dashboardMonth').addEventListener('change', renderDashboard); $('reportsMonth').addEventListener('change', renderReports);
   addPrintTools();
   document.querySelectorAll('[data-print-report]').forEach((button) => button.addEventListener('click', () => printReport(button.dataset.printReport)));
-  $('resetDemoBtn').addEventListener('click', async () => { if (!confirm('تحذير: سيتم استبدال جميع البيانات الحالية ببيانات تجريبية. يفضل تصدير نسخة احتياطية قبل المتابعة. هل تريد الاستمرار؟')) return; state = seedState(defaults()); await changed('تمت إعادة البيانات التجريبية'); });
   $('exportDataBtn').addEventListener('click', () => { const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `graphite-backup-${today()}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 500); });
   $('importDataInput').addEventListener('change', async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const imported = JSON.parse(await file.text()); const next = mergeState(defaults(), imported); const check = validateState(next); if (check) throw new Error(check); state = next; await changed('تم استيراد النسخة الاحتياطية'); } catch (error) { notify(`تعذر الاستيراد: ${error.message}`, true); } event.target.value = ''; });
 }
