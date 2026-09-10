@@ -65,6 +65,17 @@ async function loadState() {
   const rows = await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${encodeURIComponent(CLOUD_ROW_ID())}&select=state`);
   return rows?.[0]?.state ? mergeState(emptyState(), rows[0].state) : emptyState();
 }
+function mergeState(base, saved = {}) {
+  const result = { ...base, ...saved, settings: { ...base.settings, ...(saved.settings || {}) } };
+  result.products = Array.isArray(saved.products) ? saved.products : [];
+  result.imports = Array.isArray(saved.imports) ? saved.imports : [];
+  result.exports = Array.isArray(saved.exports) ? saved.exports : [];
+  result.expenses = Array.isArray(saved.expenses) ? saved.expenses : [];
+  result.payroll = Array.isArray(saved.payroll) ? saved.payroll : (Array.isArray(saved.workers) ? saved.workers : []);
+  result.partners = Array.isArray(saved.partners) ? saved.partners : [];
+  result.production = Array.isArray(saved.production) ? saved.production : [];
+  return result;
+}
 async function saveState() {
   await supabaseRequest(SUPABASE_TABLE, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: CLOUD_ROW_ID(), state, updated_at: new Date().toISOString() }) });
 }
