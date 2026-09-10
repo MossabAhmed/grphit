@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>إدارة مصنع الجرافيت</title>
+  <title>تشاركية الشرق للطلاء</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="auth.css" />
+  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body>
   <section id="authScreen" class="auth-screen">
     <div class="auth-card">
-      <div class="brand auth-brand"><span class="brand-mark">G</span><div><h1>مصنع الجرافيت</h1><p>إدارة المخزون والمحاسبة</p></div></div>
+      <div class="brand auth-brand"><span class="brand-mark">ش</span><div><h1>تشاركية الشرق للطلاء</h1><p>إدارة المخزون والمحاسبة</p></div></div>
       <h2 id="authTitle">تسجيل الدخول</h2>
       <p id="authSubtitle">أدخل بيانات حسابك للوصول إلى بيانات المصنع السحابية.</p>
       <form id="authForm" class="auth-form">
-        <label>البريد الإلكتروني<input id="authEmail" type="email" autocomplete="email" required placeholder="name@example.com"></label>
+        <label>اسم المستخدم<input id="authUsername" type="text" autocomplete="username" required minlength="3" maxlength="40" placeholder="اكتب اسم المستخدم"></label>
         <label>كلمة المرور<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required placeholder="6 أحرف على الأقل"></label>
         <button id="authSubmit" class="primary-btn" type="submit">دخول</button>
       </form>
@@ -27,7 +28,7 @@
   </section>
   <div class="shell" id="appShell" hidden>
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">G</span><div><h1>مصنع الجرافيت</h1><p>إدارة المخزون والمحاسبة</p></div></div>
+      <div class="brand"><span class="brand-mark">ش</span><div><h1>تشاركية الشرق للطلاء</h1><p>إدارة المخزون والمحاسبة</p></div></div>
       <nav class="nav">
         <button class="nav-item active" data-section="dashboard">لوحة التحكم</button>
         <button class="nav-item" data-section="inventory">الأصناف والمخزون</button>
@@ -39,10 +40,10 @@
         <button class="nav-item" data-section="production">الإنتاج</button><button class="nav-item" data-section="receivables">الذمم المالية</button><button class="nav-item" data-section="reports">التقارير</button>
         <button class="nav-item" data-section="settings">الإعدادات</button>
       </nav>
-      <div class="sidebar-card"><div class="sidebar-card-label">قاعدة البيانات</div><strong>Supabase سحابية</strong><p>قاعدة مشتركة بين الهاتف واللابتوب، وتبدأ فارغة بعد إنشاء الجدول.</p></div>
+      <div class="sidebar-card"><div class="sidebar-card-label">الإدارة اليومية</div><strong>تشاركية الشرق للطلاء</strong><p>إدارة المبيعات والمشتريات والمخزون والحسابات.</p></div>
     </aside>
     <main class="main">
-      <header class="topbar"><div><p class="eyebrow">نظام مبسط لمصنع متوسط</p><h2 id="pageTitle">مؤشرات المصنع والعمليات اليومية</h2></div><div class="topbar-actions"><button class="ghost-btn" id="exportDataBtn">تصدير نسخة احتياطية</button><button class="ghost-btn" id="logoutBtn">تسجيل الخروج</button><label class="ghost-btn file-btn">استيراد نسخة<input type="file" id="importDataInput" accept="application/json" hidden /></label></div></header>
+      <header class="topbar"><div class="topbar-title"><button class="menu-toggle" id="menuToggle" type="button" aria-label="فتح القائمة">☰</button><div><p class="eyebrow">الإدارة المالية والتشغيلية</p><h2 id="pageTitle">مؤشرات المصنع والعمليات اليومية</h2></div></div><div class="topbar-actions"><button class="ghost-btn" id="exportDataBtn">تصدير نسخة احتياطية</button><button class="ghost-btn" id="logoutBtn">تسجيل الخروج</button><label class="ghost-btn file-btn">استيراد نسخة<input type="file" id="importDataInput" accept="application/json" hidden /></label></div></header>
 
       <section id="dashboardSection" class="section active-section"><div class="stats-grid" id="statsGrid"></div><div class="panel-grid"><div class="panel wide-panel"><div class="panel-head"><div><h3>ملخص مالي</h3><p>الإيرادات وتكلفة المبيعات والمصروفات خلال الفترة المختارة</p></div><input class="period-input" id="dashboardMonth" type="month"></div><div class="chart-wrap" id="financialChart"></div></div><div class="panel"><div class="panel-head"><div><h3>تنبيهات</h3><p>حالات تحتاج متابعة</p></div></div><ul class="alerts" id="alertsList"></ul></div></div></section>
 

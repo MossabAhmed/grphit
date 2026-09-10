@@ -24,7 +24,7 @@ const unitInfo = (category, id) => UNIT_CATEGORIES[category]?.units.find((unit) 
 const unitLabel = (category, id) => unitInfo(category, id)?.label || id || '-';
 
 const defaults = () => ({
-  version: 2, settings: { factoryName: 'مصنع الجرافيت', currency: 'LYD' }, products: [], imports: [], exports: [], expenses: [], payroll: [], partners: [], production: [],
+  version: 2, settings: { factoryName: 'تشاركية الشرق للطلاء', currency: 'LYD' }, products: [], imports: [], exports: [], expenses: [], payroll: [], partners: [], production: [],
 });
 const emptyState = () => defaults();
 function offsetDate(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
@@ -44,7 +44,7 @@ async function init() {
     await startApplication();
   } catch (error) {
     console.error(error);
-    showAuthMessage(`تعذر الاتصال: ${error.message}`, false);
+    showAuthMessage('تعذر فتح الحساب الآن. حاول مرة أخرى بعد قليل.', false);
     showAuth();
   }
 }
@@ -81,15 +81,19 @@ async function restoreSession() {
   try { const refreshed = await authRequest('token?grant_type=refresh_token', { refresh_token: saved.refresh_token }); localStorage.setItem('grphit-session', JSON.stringify(refreshed)); return refreshed; } catch { localStorage.removeItem('grphit-session'); return null; }
 }
 function bindAuth() {
-  $('authForm').addEventListener('submit', async (event) => { event.preventDefault(); const email = $('authEmail').value.trim(); const password = $('authPassword').value; $('authSubmit').disabled = true; showAuthMessage('جارٍ الاتصال...', true); try { const data = await authRequest(authSignUpMode ? 'signup' : 'token?grant_type=password', { email, password }); if (authSignUpMode && !data.access_token) { showAuthMessage('تم إنشاء الحساب. تحقق من بريدك الإلكتروني ثم سجّل الدخول.', true); authSignUpMode = false; updateAuthMode(); return; } session = data; localStorage.setItem('grphit-session', JSON.stringify(data)); await startApplication(); } catch (error) { showAuthMessage(error.message, false); } finally { $('authSubmit').disabled = false; } });
+  $('authForm').addEventListener('submit', async (event) => { event.preventDefault(); const username = normalizeUsername($('authUsername').value); const email = usernameEmail(username); const password = $('authPassword').value; if (username.length < 3) return showAuthMessage('اسم المستخدم يجب أن يتكون من 3 أحرف على الأقل.', false); $('authSubmit').disabled = true; showAuthMessage('جارٍ الاتصال...', true); try { const data = await authRequest(authSignUpMode ? 'signup' : 'token?grant_type=password', { email, password, data: { username } }); if (authSignUpMode && !data.access_token) { showAuthMessage('تم إنشاء الحساب. يمكنك تسجيل الدخول الآن.', true); authSignUpMode = false; updateAuthMode(); return; } session = data; localStorage.setItem('grphit-session', JSON.stringify(data)); await startApplication(); } catch (error) { showAuthMessage(error.message, false); } finally { $('authSubmit').disabled = false; } });
   $('authModeToggle').addEventListener('click', () => { authSignUpMode = !authSignUpMode; updateAuthMode(); });
   $('logoutBtn').addEventListener('click', async () => { try { await authRequest('logout', null); } catch {} localStorage.removeItem('grphit-session'); session = null; location.reload(); });
+  $('menuToggle').addEventListener('click', () => document.body.classList.toggle('menu-open'));
+  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => document.body.classList.remove('menu-open')));
   updateAuthMode();
 }
-function updateAuthMode() { $('authTitle').textContent = authSignUpMode ? 'إنشاء حساب' : 'تسجيل الدخول'; $('authSubtitle').textContent = authSignUpMode ? 'أنشئ حسابًا للوصول الآمن إلى بيانات المصنع.' : 'أدخل بيانات حسابك للوصول إلى بيانات المصنع السحابية.'; $('authSubmit').textContent = authSignUpMode ? 'إنشاء الحساب' : 'دخول'; $('authModeToggle').textContent = authSignUpMode ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد'; }
+function updateAuthMode() { $('authTitle').textContent = authSignUpMode ? 'إنشاء حساب' : 'تسجيل الدخول'; $('authSubtitle').textContent = authSignUpMode ? 'أنشئ حسابًا للوصول إلى حسابات الشركة.' : 'أدخل اسم المستخدم وكلمة المرور للمتابعة.'; $('authSubmit').textContent = authSignUpMode ? 'إنشاء الحساب' : 'دخول'; $('authModeToggle').textContent = authSignUpMode ? 'لدي حساب بالفعل' : 'إنشاء حساب جديد'; }
 function showAuth() { $('authScreen').hidden = false; $('appShell').hidden = true; }
 function hideAuth() { $('authScreen').hidden = true; $('appShell').hidden = false; }
 function showAuthMessage(message, success) { const el = $('authMessage'); el.textContent = message; el.className = `auth-message${success ? ' success' : ''}`; }
+function normalizeUsername(value) { return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '').slice(0, 40); }
+function usernameEmail(username) { return `${username}@accounts.grphit.local`; }
 
 function inferCategory(label) {
   const value = normalize(label);
@@ -105,7 +109,8 @@ function inferUnit(label, category) {
 
 function normalizeState() {
   state.version = 2;
-  state.settings = { factoryName: state.settings.factoryName || 'مصنع الجرافيت', currency: state.settings.currency || 'LYD' };
+  if (!state.settings.factoryName || state.settings.factoryName === 'مصنع الجرافيت' || state.settings.factoryName === 'تشاركية الشرق للطلاب') state.settings.factoryName = 'تشاركية الشرق للطلاء';
+  state.settings = { factoryName: state.settings.factoryName, currency: state.settings.currency || 'LYD' };
   state.products.forEach((p) => { p.id ||= uid(); p.unitCategory ||= inferCategory(p.unit); p.baseUnit ||= inferUnit(p.unit, p.unitCategory); p.alternateUnits ||= []; p.openingQty = num(p.openingQty ?? p.qty); p.openingCost = num(p.openingCost); p.minLevel = num(p.minLevel); });
   deduplicateProducts();
   const fallback = state.products[0]?.id;
@@ -257,7 +262,7 @@ function printDocument(title, number, body) {
   if (existing) existing.remove();
   const sheet = document.createElement('div');
   sheet.className = 'print-sheet';
-  sheet.innerHTML = `<div class="print-page"><header class="print-header"><div class="print-brand"><h1>${esc(state.settings.factoryName)}</h1><p>الجمهورية الليبية — مستند تجاري</p><p>هاتف المصنع: ____________</p></div><div class="print-document"><h2>${esc(title)}</h2><div>رقم المستند: ${esc(number)}</div><div>تاريخ الإصدار: ${esc(today())}</div></div></header>${body}<div class="print-signature"><span>توقيع المسؤول</span><span>توقيع العميل / المورد</span></div><footer class="print-footer"><span>${esc(state.settings.factoryName)}</span><span>العملة: ${esc(state.settings.currency)} — مستند صادر من النظام</span></footer></div>`;
+  sheet.innerHTML = `<div class="print-page"><header class="print-header"><div class="print-brand"><h1>${esc(state.settings.factoryName)}</h1><p>الجمهورية الليبية</p><p>هاتف الشركة: ____________</p></div><div class="print-document"><h2>${esc(title)}</h2><div>رقم المستند: ${esc(number)}</div><div>تاريخ الإصدار: ${esc(today())}</div></div></header>${body}<div class="print-signature"><span>توقيع المسؤول</span><span>توقيع العميل / المورد</span></div><footer class="print-footer"><span>${esc(state.settings.factoryName)}</span><span>العملة: ${esc(state.settings.currency)}</span></footer></div>`;
   document.body.appendChild(sheet);
   document.body.classList.add('printing-document');
   let cleaned = false;
