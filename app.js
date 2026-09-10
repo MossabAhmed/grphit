@@ -142,9 +142,14 @@ function deduplicateProducts() {
 }
 
 function bindNavigation() {
-  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', (event) => {
+    event.preventDefault();
     document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === button));
-    sections.forEach((name) => $(name + 'Section').classList.toggle('active-section', name === button.dataset.section));
+    const targetName = button.dataset.section;
+    sections.forEach((name) => $(name + 'Section').classList.toggle('active-section', name === targetName));
+    const target = $(targetName + 'Section');
+    if (target) window.requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    document.body.classList.remove('menu-open');
   }));
 }
 
